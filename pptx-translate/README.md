@@ -1,7 +1,7 @@
-# pptx-translate
+# pptx-translate (PPTX to Markdown Extractor)
 
-Offline Korean → English PowerPoint translator.  
-No data leaves your machine after the one-time model download.
+Offline PowerPoint text and image extractor.  
+Extracts all slide text and embedded images into a clean Markdown layout. Uses local Tesseract OCR to optionally extract Korean text from embedded images.
 
 ---
 
@@ -10,7 +10,7 @@ No data leaves your machine after the one-time model download.
 | Tool | Notes |
 |------|-------|
 | Python 3.10+ | |
-| Tesseract OCR | Must be on `PATH` — already done ✔ |
+| Tesseract OCR | Must be on `PATH` |
 | Korean Tesseract data | `kor.traineddata` must be in your `tessdata` folder |
 
 ---
@@ -20,13 +20,6 @@ No data leaves your machine after the one-time model download.
 ```powershell
 # 1. Install Python dependencies
 pip install -r requirements.txt
-
-# 2. Download the ko→en translation model (ONE TIME — then fully offline)
-#    Just run the translator normally — it auto-downloads on first run:
-python extract.py -i any_file.pptx -o ./output/
-
-#    After the first successful run the model is cached locally.
-#    All future runs work with WiFi off.
 ```
 
 > **Missing Korean tessdata?**  
@@ -38,26 +31,20 @@ python extract.py -i any_file.pptx -o ./output/
 ## Usage
 
 ```powershell
-# Translate a single file
-python extract.py -i report.pptx -o report_en.pptx
+# Extract a single file (outputs to ./extracted/report.md)
+python extract.py -i report.pptx
 
-# Translate an entire folder (preserves sub-folder structure)
-python extract.py -i C:\docs\pptx\ -o C:\docs\translated\
+# Extract an entire folder
+python extract.py -i C:\docs\pptx\ -o C:\docs\extracted\
 
-# Text shapes only — skip image OCR (faster)
-python extract.py -i slides.pptx -o slides_en.pptx --skip-images
+# Skip image OCR and extraction (faster)
+python extract.py -i slides.pptx --skip-images
 
-# Raise OCR confidence bar (fewer but more accurate detections)
-python extract.py -i slides.pptx -o slides_en.pptx --confidence 75
-
-# Only include larger text from images in speaker notes (skip small labels)
-python extract.py -i slides.pptx -o slides_en.pptx --min-text-height 30
-
-# Preview what would be translated — writes nothing
-python extract.py -i slides.pptx --dry-run
+# Raise OCR confidence bar (fewer but more accurate detections on images)
+python extract.py -i slides.pptx --confidence 75
 
 # Verbose debug output
-python extract.py -i slides.pptx -o slides_en.pptx --verbose
+python extract.py -i slides.pptx --verbose
 ```
 
 ### All flags
@@ -65,47 +52,29 @@ python extract.py -i slides.pptx -o slides_en.pptx --verbose
 | Flag | Default | Description |
 |------|---------|-------------|
 | `-i / --input` | *(required)* | `.pptx` file or folder |
-| `-o / --output` | `./translated` | Output file or folder |
-| `--skip-images` | off | Skip OCR on embedded images entirely |
+| `-o / --output` | `./extracted` | Output folder or `.md` file |
+| `--skip-images` | off | Skip saving images and performing OCR |
 | `--confidence` | `60` | Min Tesseract word confidence (0–100) |
-| `--min-text-height` | `18` | Min pixel height of OCR text block to include in notes. Increase to skip smaller text, decrease to capture more. |
-| `--lang` | `kor` | Tesseract language code (`kor+eng` for mixed slides) |
-| `--dry-run` | off | Print translations, write nothing |
+| `--min-text-height` | `18` | Min pixel height of OCR text block. |
+| `--lang` | `kor` | Tesseract language code |
 | `--verbose` | off | Debug logging |
 
 ---
 
-## What gets translated
+## What gets extracted
 
 | Content | How |
 |---------|-----|
-| Slide titles | ✅ In-place (text replaced, formatting preserved) |
-| Body text / bullet points | ✅ In-place |
-| Text boxes | ✅ In-place |
-| Table cells | ✅ In-place |
-| Group shapes (recursively) | ✅ In-place |
-| Speaker notes | ✅ In-place |
-| Embedded images (JPEG/PNG) | ✅ OCR → translated text appended to **speaker notes** |
-| Embedded EMF/WMF vectors | ⚠️ Skipped (not raster images) |
-| Rotated diagram labels | ⚠️ Best-effort by Tesseract |
+| Slide titles | ✅ Markdown list |
+| Body text / bullet points | ✅ Markdown list |
+| Text boxes | ✅ Markdown list |
+| Table cells | ✅ Markdown tables |
+| Group shapes (recursively) | ✅ Markdown list |
+| Speaker notes | ✅ Markdown under `### Speaker Notes` |
+| Embedded images (JPEG/PNG) | ✅ Saved to disk and linked in Markdown |
+| Image Text (Korean) | ✅ Extracted via OCR and placed under image links |
 
-> **Images are never modified.** Korean text found in images is extracted via
-> Tesseract OCR, translated, and appended to the slide's speaker notes under
-> the header `── Image Text (auto-translated) ──`. This avoids any risk of
-> image corruption or layout breakage.
-
----
-
-## Known Limitations
-
-- **Rotated text** on flowchart arrows may be missed — Tesseract handles
-  horizontal text best.
-- **Very small labels** are skipped by default (`--min-text-height 18`).
-  Lower this value to capture smaller text, at the cost of more noise.
-- **Translation quality** depends on argostranslate's Helsinki-NLP model.
-  Technical jargon and acronyms are usually preserved as-is.
-- **Image text in notes only** — the flowchart images themselves remain in
-  Korean; the English translation appears in the notes pane below each slide.
+> **100% Offline.** All processing happens locally on your machine. Images are extracted as they are, without modification. 
 
 ---
 
@@ -116,10 +85,9 @@ pptx-translate/
 ├── extract.py              ← CLI entry point
 ├── requirements.txt
 ├── README.md
-├── dev_log.md                ← full session history and design decisions
+├── dev_log.md              ← full session history and design decisions
 └── translator/
     ├── __init__.py
-    ├── text_engine.py        ← argostranslate wrapper (ko→en, offline-first)
-    ├── image_handler.py      ← Tesseract OCR; extract_text_for_notes()
-    └── pptx_handler.py       ← python-pptx traversal + orchestration
+    ├── image_handler.py    ← Tesseract OCR
+    └── pptx_handler.py     ← python-pptx traversal + orchestration
 ```

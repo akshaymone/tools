@@ -314,3 +314,41 @@ Each OCR block now passes through these gates before reaching argostranslate:
 | Add `seen_translated` dedup | "About Us" ×11 now appears at most once |
 
 - **Commit `d3828d1`** — `fix: stricter OCR filters — raise thresholds, add translation dedup and min-word filter`
+
+---
+
+## Session 5 — 2026-08-14 (Conversation `Current`)
+
+### Context
+User reported that translation was producing explicit/garbage texts and opted to pivot the tool. The new goal: drop translation entirely, extract Korean text, and format it cleanly into a Markdown document reflecting the PPT layout. Also extract the actual images from the presentation, save them locally, and link them directly in the Markdown file using standard `![Image](path)` syntax, making validation easy alongside clear slide numbers.
+
+### Architectural Pivot
+- **Removed Argostranslate**: Completely removed `argostranslate`, `stanza`, `spacy` and `text_engine.py` to eliminate heavy, noisy translation logic.
+- **Renamed Entry Point**: Changed `translate.py` to `extract.py`.
+- **Markdown Generation**: Rather than writing modifications back into the PPTX files, the tool now generates a structured `[filename].md` file.
+- **Image Extraction**: Extracted images from the PPTX are written to a sidecar folder (e.g., `./presentation_images/`) and linked natively in the Markdown text.
+- **Retained Quality Filters**: The Tesseract OCR still applies the Korean-only filter heuristics from previous sessions to ensure only actual Korean text is extracted from images, keeping noise to a minimum.
+
+### New Output Format
+```markdown
+## Slide 1
+- Heading Text
+
+### Speaker Notes
+- Note text
+
+### Images
+#### Image 1
+![Slide 1 Image 1](./your_presentation_images/slide_1_img_1.png)
+
+**Extracted Korean Text:**
+- ... (Korean OCR results here, if any) ...
+```
+
+### Commit History (Session 5)
+
+| Commit | Description |
+|---|---|
+| `c0b346e` | refactor: simplify to MD text extraction (remove translation) |
+| `3e4fe05` | feat: extract and link images in markdown |
+
