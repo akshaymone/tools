@@ -17,6 +17,25 @@ from tqdm import tqdm
 import argostranslate.package
 import argostranslate.translate
 
+# --- Offline Stanza Patch ---
+# Stanza tries to fetch resources.json on every run. 
+# We intercept it so if it fails (offline), it just uses the cached version.
+try:
+    import stanza.resources.common
+    orig_download = stanza.resources.common.download_resources_json
+    def safe_download(dir, filename='resources.json', url=None, proxies=None, resources_version=None):
+        try:
+            orig_download(dir, filename, url, proxies, resources_version)
+        except Exception as e:
+            if os.path.exists(os.path.join(dir, filename)):
+                log.info("Offline mode: Using cached Stanza resources.json")
+            else:
+                raise e
+    stanza.resources.common.download_resources_json = safe_download
+except ImportError:
+    pass
+
+
 
 def setup_logging(verbose: bool):
     level = logging.DEBUG if verbose else logging.INFO
