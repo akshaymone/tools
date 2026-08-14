@@ -376,3 +376,24 @@ User reported that the Markdown extraction wasn't fitting their needs and wanted
 |---|---|
 | `ce943de` | docs: update README and dev_log for extraction pivot |
 | `3fec477` | feat: add xml_translate.py for direct XML manipulation, update docs |
+
+---
+
+## Session 7 — 2026-08-14 (Conversation `Current`)
+
+### Bug: Stanza Offline Patch Bypassed in xml_translate.py
+
+**Error:**
+`getaddrinfo failed` on `raw.githubusercontent.com` when running offline.
+
+**Root cause:**
+The offline patch for Stanza's `download_resources_json` was placed *after* the `import argostranslate.translate` statement. `argostranslate` implicitly imports `stanza.pipeline.core`, which binds the original unpatched `download_resources_json` function to its namespace (`from stanza.resources.common import download_resources_json`). Therefore, the patch was bypassed.
+
+**Fix:**
+Moved the Stanza offline patch to execute *before* `argostranslate` is imported. Added an explicit patch for `stanza.pipeline.core.download_resources_json` to guarantee all internal Stanza modules use the offline-safe version.
+
+### Commit History (Session 7)
+
+| Commit | Description |
+|---|---|
+| (Pending) | fix: fix import ordering bug bypassing Stanza offline patch in xml_translate.py |

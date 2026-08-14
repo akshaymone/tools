@@ -14,9 +14,6 @@ from PIL import Image
 from pptx import Presentation
 from tqdm import tqdm
 
-import argostranslate.package
-import argostranslate.translate
-
 # --- Offline Stanza Patch ---
 # Stanza tries to fetch resources.json on every run. 
 # We intercept it so if it fails (offline), it just uses the cached version.
@@ -28,12 +25,20 @@ try:
             orig_download(dir, filename, url, proxies, resources_version)
         except Exception as e:
             if os.path.exists(os.path.join(dir, filename)):
-                log.info("Offline mode: Using cached Stanza resources.json")
+                import logging
+                logging.getLogger(__name__).info("Offline mode: Using cached Stanza resources.json")
             else:
                 raise e
     stanza.resources.common.download_resources_json = safe_download
+    
+    # Also patch pipeline.core in case it was already imported
+    import stanza.pipeline.core
+    stanza.pipeline.core.download_resources_json = safe_download
 except ImportError:
     pass
+
+import argostranslate.package
+import argostranslate.translate
 
 
 
