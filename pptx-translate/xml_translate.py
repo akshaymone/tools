@@ -20,11 +20,13 @@ from tqdm import tqdm
 try:
     import stanza.resources.common
     orig_download = stanza.resources.common.download_resources_json
-    def safe_download(dir, filename='resources.json', url=None, proxies=None, resources_version=None):
+    def safe_download(*args, **kwargs):
         try:
-            orig_download(dir, filename, url, proxies, resources_version)
+            orig_download(*args, **kwargs)
         except Exception as e:
-            if os.path.exists(os.path.join(dir, filename)):
+            target_dir = kwargs.get('dir', args[0] if len(args) > 0 else None)
+            target_filename = kwargs.get('filename', args[1] if len(args) > 1 else 'resources.json')
+            if target_dir and os.path.exists(os.path.join(target_dir, target_filename)):
                 import logging
                 logging.getLogger(__name__).info("Offline mode: Using cached Stanza resources.json")
             else:

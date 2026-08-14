@@ -392,8 +392,20 @@ The offline patch for Stanza's `download_resources_json` was placed *after* the 
 **Fix:**
 Moved the Stanza offline patch to execute *before* `argostranslate` is imported. Added an explicit patch for `stanza.pipeline.core.download_resources_json` to guarantee all internal Stanza modules use the offline-safe version.
 
+### Bug 2: Stanza Patch TypeError with `resources_url`
+
+**Error:**
+`TypeError: safe_download() got an unexpected keyword argument 'resources_url'`
+
+**Root cause:**
+Newer versions of `stanza` call `download_resources_json` with a `resources_url` keyword argument. The custom `safe_download` patch had a strict signature (`def safe_download(dir, filename='resources.json', url=None, proxies=None, resources_version=None)`) that did not accept this new kwargs, causing the patch itself to crash.
+
+**Fix:**
+Updated `safe_download` to use `*args, **kwargs` to dynamically accept any arguments and pass them cleanly to the original function. The fallback logic was updated to use `kwargs.get()` and positional argument index checks to locate the `dir` and `filename` needed for the cache fallback.
+
 ### Commit History (Session 7)
 
 | Commit | Description |
 |---|---|
 | (Pending) | fix: fix import ordering bug bypassing Stanza offline patch in xml_translate.py |
+| (Pending) | fix: update Stanza offline patch to accept arbitrary kwargs to prevent TypeError |
