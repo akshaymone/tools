@@ -145,6 +145,8 @@ Once the model is downloaded once, **all future runs are 100% offline**, even if
 | `1f5cdc7` | fix: update argostranslate API for newer versions |
 | `3921e64` | fix: proper offline support — install from cached .argosmodel if available |
 | `6707946` | fix: prevent stanza network calls offline; improve tessdata error message |
+| `9c25e9e` | docs: add dev_log.md with full session history and design decisions |
+| `f3d25bb` | fix: replace image blob-swap with notes-based OCR translation |
 
 ---
 
@@ -153,9 +155,11 @@ Once the model is downloaded once, **all future runs are 100% offline**, even if
 - **First run needs internet** — downloads the `ko→en` argostranslate model (~100MB). Every run after is offline.
 - **Tesseract Korean data** — `kor.traineddata` must be in your Tesseract `tessdata/` folder. Download from [tesseract-ocr/tessdata](https://github.com/tesseract-ocr/tessdata) if missing.
 - **Tune OCR confidence** — `--confidence 40` catches more text (but more noise); `--confidence 75` is stricter (may miss faint text). Default is `60`.
+- **Tune image text size** — `--min-text-height 18` (default) skips tiny labels. Increase (e.g. `30`) for only large headings; decrease (e.g. `12`) to capture more text in notes.
 - **Mixed-language slides** — use `--lang kor+eng` if slides mix Korean and English.
 - **Skip image OCR** — use `--skip-images` if you only care about translating text boxes.
 - **Dry run** — use `--dry-run` to preview without writing output files.
+- **Images are never modified** — OCR text from images goes to speaker notes only (safe, no corruption risk).
 
 ---
 
@@ -245,4 +249,4 @@ python translate.py -i slides.pptx -o output/ --min-text-height 30
 python translate.py -i slides.pptx -o output/ --min-text-height 12
 ```
 
-- **Commit `(pending push)`** — `fix: replace image blob-swap with notes-based OCR translation`
+- **Commit `f3d25bb`** — `fix: replace image blob-swap with notes-based OCR translation`
