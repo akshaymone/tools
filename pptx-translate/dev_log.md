@@ -290,4 +290,23 @@ Each OCR block now passes through these gates before reaching argostranslate:
 **Files changed:**
 - `translator/image_handler.py` — added `re`, `unicodedata` imports; added 4 filter utilities; rewrote `extract_text_for_notes()` with 5-filter pipeline
 
-- **Commit `(to be pushed)`** — `fix: add Korean content filters to image OCR — prevent garbage translation`
+- **Commit `ee631cd`** — `fix: add Korean content filters to image OCR — prevent garbage translation`
+
+### Session 4 Follow-up — Filters Still Too Loose
+
+**User report (actual output):**
+- "About Us" appearing 11 times, "Teen" 3 times — dedup only on source, not on translated output
+- "YepTube", "Teen", "Home", "Bathroom", "Color" — single-word garbage from isolated syllables
+- Biblical-style hallucinations — Helsinki-NLP offline model struggling with technical jargon
+
+**Additional fixes applied (commit `ee631cd`+):**
+
+| Fix | Detail |
+|---|---|
+| Raise `_MIN_HANGUL_CHARS` 3→5 | Stricter — needs more Korean content |
+| Raise `_MIN_KOREAN_RATIO` 0.25→0.40 | Stricter — 40% of text must be Hangul |
+| Add `_MIN_SOURCE_LEN = 6` | Micro-fragments (< 6 chars) skipped entirely |
+| Add `_MIN_TRANSLATED_WORDS = 2` | 1-word translations killed ("Teen", "Home", etc.) |
+| Add `seen_translated` dedup | "About Us" ×11 now appears at most once |
+
+- **Commit `(next push)`** — `fix: stricter OCR filters — raise thresholds, add translation dedup and min-word filter`

@@ -40,10 +40,17 @@ log = logging.getLogger(__name__)
 _HANGUL_RE = re.compile(r"[\uAC00-\uD7A3\u1100-\u11FF\u3130-\u318F]")
 
 # Minimum fraction of characters that must be Hangul for a block to be translated
-_MIN_KOREAN_RATIO = 0.25
+_MIN_KOREAN_RATIO = 0.40   # raised from 0.25 — filters mixed symbol/number junk
 
-# Minimum number of Hangul characters required (filters out single-syllable noise)
-_MIN_HANGUL_CHARS = 3
+# Minimum number of Hangul characters required
+_MIN_HANGUL_CHARS = 5      # raised from 3 — filters single-syllable noise
+
+# Minimum total characters in the cleaned source text before attempting translation
+_MIN_SOURCE_LEN = 6        # at least 6 chars (≈ 2 Korean words)
+
+# Minimum words in a translated result — 1-word translations are almost always
+# noise (isolated syllable → wrong English word mapping by offline model)
+_MIN_TRANSLATED_WORDS = 2
 
 
 def _korean_ratio(text: str) -> float:
@@ -259,12 +266,15 @@ class ImageHandler:
         OCR *image_bytes*, apply quality filters, translate genuine Korean
         text blocks, and return a list of translated strings.
 
-        Filters applied before translation (in order):
-          1. Block pixel height >= min_height  (skips tiny labels)
-          2. Block contains >= 3 Hangul characters  (skips OCR noise / English)
-          3. >= 25% of characters are Hangul  (skips mixed symbol/number junk)
-          4. OCR noise stripped (stray ASCII around Korean)
-          5. Deduplication  (same Korean phrase appearing multiple times in image)
+        Filters applied (in order):
+          1. Block pixel height >= min_height         (skips tiny labels)
+          2. Block contains >= 5 Hangul characters    (skips OCR noise/English)
+          3. >= 40% of characters are Hangul          (skips mixed junk)
+          4. Cleaned source text >= 6 characters      (skips micro-fragments)
+          5. OCR noise stripped (_clean_ocr_text)
+          6. Source dedup — same Korean not translated twice
+          7. Translation >= 2 words                   (kills 1-word garbage)
+          8. Translation dedup — same English not repeated
 
         The image is never modified.  Returns [] if nothing passes filters.
         """
@@ -282,7 +292,8 @@ class ImageHandler:
             return []
 
         results: list[str] = []
-        seen_raw: set[str] = set()   # deduplicate on the raw Korean text
+        seen_raw: set[str] = set()          # dedup on cleaned Korean source
+        seen_translated: set[str] = set()   # dedup on translated output
 
         for (block_num,), block_df in df.groupby(["block_num"]):
             for (par_num,), par_df in block_df.groupby(["par_num"]):
@@ -290,25 +301,25 @@ class ImageHandler:
                 if not block_text:
                     continue
 
-                # Filter 1 — size: skip small text
+                # Filter 1 — size
                 if block_h < min_height:
                     log.debug(f"    [skip-size h={block_h}px] {block_text[:30]!r}")
                     continue
 
-                # Filter 2 & 3 — content: must be genuinely Korean
+                # Filter 2 & 3 — Korean content
                 if not _is_korean_text(block_text):
                     log.debug(f"    [skip-lang] {block_text[:40]!r}")
                     continue
 
-                # Filter 4 — clean OCR noise before translating
+                # Filter 4 & 5 — clean + min length
                 cleaned = _clean_ocr_text(block_text)
-                if not cleaned or not _is_korean_text(cleaned):
-                    log.debug(f"    [skip-clean] {block_text[:40]!r}")
+                if not cleaned or len(cleaned) < _MIN_SOURCE_LEN or not _is_korean_text(cleaned):
+                    log.debug(f"    [skip-clean/len] {block_text[:40]!r}")
                     continue
 
-                # Filter 5 — deduplicate
+                # Filter 6 — source dedup
                 if cleaned in seen_raw:
-                    log.debug(f"    [skip-dup] {cleaned[:40]!r}")
+                    log.debug(f"    [skip-src-dup] {cleaned[:40]!r}")
                     continue
                 seen_raw.add(cleaned)
 
@@ -316,8 +327,22 @@ class ImageHandler:
                 if not translated or translated.strip() == cleaned.strip():
                     continue
 
+                translated = translated.strip()
+
+                # Filter 7 — min 2 words in translation (1-word = noise)
+                if len(translated.split()) < _MIN_TRANSLATED_WORDS:
+                    log.debug(f"    [skip-short-translation] {translated!r} ← {cleaned[:30]!r}")
+                    continue
+
+                # Filter 8 — translation dedup
+                t_lower = translated.lower()
+                if t_lower in seen_translated:
+                    log.debug(f"    [skip-trans-dup] {translated!r}")
+                    continue
+                seen_translated.add(t_lower)
+
                 log.debug(f"    [{cleaned[:40]!r}] → [{translated[:40]!r}]")
-                results.append(translated.strip())
+                results.append(translated)
 
         return results
 
