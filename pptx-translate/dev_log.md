@@ -435,3 +435,26 @@ User requested to convert the `pptx-translate` tool into a standalone installabl
 | Commit | Description |
 |---|---|
 | (Pending) | feat: convert pptx-translate to translator package and integrate agents LLM factory |
+
+---
+
+## Session 9 — 2026-08-14 (Conversation `Current`)
+
+### Bug: Unexpected keyword argument 'temperature' for Client.chat()
+
+**Error:**
+```
+[WARNING] LLM translation failed for text '...': Client.chat() got an unexpected keyword argument 'temperature'
+```
+
+**Root cause:**
+When integrating the `agents` LLM factory in Session 8, the `get_llm()` call was passing `temperature=0.1`. The underlying LLM client wrapped by the `agents` module does not accept `temperature` as a valid keyword argument for its `chat()` method, causing the translation step to fail with a `TypeError`.
+
+**Fix:**
+Removed the unsupported `temperature=0.1` keyword argument from the `get_llm(provider=provider)` call inside `translator/main.py`. The backend LLM client now defaults to its internal parameter settings and execution succeeds.
+
+### Commit History (Session 9)
+
+| Commit | Description |
+|---|---|
+| (Pending) | fix: remove unsupported temperature kwarg from get_llm call in main.py |

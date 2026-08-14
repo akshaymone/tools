@@ -48,7 +48,7 @@ for prefix, uri in NS.items():
 # --- Translation Engine (LLM) ---
 class LLMTranslator:
     def __init__(self, provider: str = None):
-        self.llm = get_llm(provider=provider, temperature=0.1)
+        self.llm = get_llm(provider=provider)
         self.system_message = SystemMessage(
             content="You are a professional translator. Translate the given Korean text into English. "
                     "Return ONLY the English translation, with no explanation, no quotation marks, and no conversational text."
