@@ -147,6 +147,10 @@ Once the model is downloaded once, **all future runs are 100% offline**, even if
 | `6707946` | fix: prevent stanza network calls offline; improve tessdata error message |
 | `9c25e9e` | docs: add dev_log.md with full session history and design decisions |
 | `f3d25bb` | fix: replace image blob-swap with notes-based OCR translation |
+| `b5c9999` | docs: update dev_log — fix pending commit hash, add session 3 commits, update tips |
+| `ee73791` | docs: update README — new image→notes approach, --min-text-height flag, setup simplification |
+| `ee631cd` | fix: add Korean content filters to image OCR — prevent garbage translation |
+| `d3828d1` | fix: stricter OCR filters — raise thresholds, add translation dedup and min-word filter |
 
 ---
 
@@ -309,4 +313,4 @@ Each OCR block now passes through these gates before reaching argostranslate:
 | Add `_MIN_TRANSLATED_WORDS = 2` | 1-word translations killed ("Teen", "Home", etc.) |
 | Add `seen_translated` dedup | "About Us" ×11 now appears at most once |
 
-- **Commit `(next push)`** — `fix: stricter OCR filters — raise thresholds, add translation dedup and min-word filter`
+- **Commit `d3828d1`** — `fix: stricter OCR filters — raise thresholds, add translation dedup and min-word filter`
