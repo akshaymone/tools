@@ -23,7 +23,7 @@ pip install -r requirements.txt
 
 # 2. Download the ko→en translation model (ONE TIME — then fully offline)
 #    Just run the translator normally — it auto-downloads on first run:
-python translate.py -i any_file.pptx -o ./output/
+python extract.py -i any_file.pptx -o ./output/
 
 #    After the first successful run the model is cached locally.
 #    All future runs work with WiFi off.
@@ -39,25 +39,25 @@ python translate.py -i any_file.pptx -o ./output/
 
 ```powershell
 # Translate a single file
-python translate.py -i report.pptx -o report_en.pptx
+python extract.py -i report.pptx -o report_en.pptx
 
 # Translate an entire folder (preserves sub-folder structure)
-python translate.py -i C:\docs\pptx\ -o C:\docs\translated\
+python extract.py -i C:\docs\pptx\ -o C:\docs\translated\
 
 # Text shapes only — skip image OCR (faster)
-python translate.py -i slides.pptx -o slides_en.pptx --skip-images
+python extract.py -i slides.pptx -o slides_en.pptx --skip-images
 
 # Raise OCR confidence bar (fewer but more accurate detections)
-python translate.py -i slides.pptx -o slides_en.pptx --confidence 75
+python extract.py -i slides.pptx -o slides_en.pptx --confidence 75
 
 # Only include larger text from images in speaker notes (skip small labels)
-python translate.py -i slides.pptx -o slides_en.pptx --min-text-height 30
+python extract.py -i slides.pptx -o slides_en.pptx --min-text-height 30
 
 # Preview what would be translated — writes nothing
-python translate.py -i slides.pptx --dry-run
+python extract.py -i slides.pptx --dry-run
 
 # Verbose debug output
-python translate.py -i slides.pptx -o slides_en.pptx --verbose
+python extract.py -i slides.pptx -o slides_en.pptx --verbose
 ```
 
 ### All flags
@@ -113,7 +113,7 @@ python translate.py -i slides.pptx -o slides_en.pptx --verbose
 
 ```
 pptx-translate/
-├── translate.py              ← CLI entry point
+├── extract.py              ← CLI entry point
 ├── requirements.txt
 ├── README.md
 ├── dev_log.md                ← full session history and design decisions
