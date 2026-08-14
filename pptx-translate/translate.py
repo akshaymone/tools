@@ -3,6 +3,14 @@ pptx-translate — Offline Korean → English PowerPoint Translator
 Usage: python translate.py -i <file_or_folder> -o <output>
 """
 
+# ── MUST be set BEFORE argostranslate is imported ─────────────────────────────
+# Argostranslate uses Stanza for sentence-boundary detection by default.
+# Stanza tries to download resources from raw.githubusercontent.com at runtime,
+# which fails offline.  Switching to SPACY avoids any network dependency.
+import os
+os.environ.setdefault("ARGOS_CHUNK_TYPE", "SPACY")
+# ──────────────────────────────────────────────────────────────────────────────
+
 import argparse
 import logging
 import sys

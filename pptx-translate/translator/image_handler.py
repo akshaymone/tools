@@ -213,7 +213,19 @@ class ImageHandler:
                 output_type=pytesseract.Output.DATAFRAME,
             )
         except Exception as exc:
-            log.warning(f"    Tesseract OCR error: {exc}")
+            err = str(exc)
+            # Give a clear, actionable message for the most common failure
+            if "tessdata" in err and self.ocr_lang in err:
+                log.warning(
+                    f"    Tesseract OCR skipped — missing language data for '{self.ocr_lang}'.\n"
+                    f"    Fix: Download kor.traineddata and place it in your tessdata folder:\n"
+                    f"      https://github.com/tesseract-ocr/tessdata/raw/main/kor.traineddata\n"
+                    f"    Then save it to:\n"
+                    f"      C:\\Users\\%USERNAME%\\AppData\\Local\\Programs\\Tesseract-OCR\\tessdata\\kor.traineddata\n"
+                    f"    (Run this once with internet, then OCR will work fully offline.)"
+                )
+            else:
+                log.warning(f"    Tesseract OCR error: {exc}")
             return None
 
         # Filter
