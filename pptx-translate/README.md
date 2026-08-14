@@ -22,15 +22,16 @@ No data leaves your machine after the one-time model download.
 pip install -r requirements.txt
 
 # 2. Download the ko→en translation model (ONE TIME — then fully offline)
-python -c "
-import argostranslate.package, argostranslate.translate
-argostranslate.package.update_package_index()
-pkgs = argostranslate.package.get_available_packages()
-pkg = next(p for p in pkgs if p.from_code=='ko' and p.to_code=='en')
-pkg.install()
-print('Model ready.')
-"
+#    Just run the translator normally — it auto-downloads on first run:
+python translate.py -i any_file.pptx -o ./output/
+
+#    After the first successful run the model is cached locally.
+#    All future runs work with WiFi off.
 ```
+
+> **Missing Korean tessdata?**  
+> Download [`kor.traineddata`](https://github.com/tesseract-ocr/tessdata/raw/main/kor.traineddata)  
+> and place it in your Tesseract `tessdata/` folder (e.g. `C:\Program Files\Tesseract-OCR\tessdata\`).
 
 ---
 
@@ -49,6 +50,9 @@ python translate.py -i slides.pptx -o slides_en.pptx --skip-images
 # Raise OCR confidence bar (fewer but more accurate detections)
 python translate.py -i slides.pptx -o slides_en.pptx --confidence 75
 
+# Only include larger text from images in speaker notes (skip small labels)
+python translate.py -i slides.pptx -o slides_en.pptx --min-text-height 30
+
 # Preview what would be translated — writes nothing
 python translate.py -i slides.pptx --dry-run
 
@@ -62,9 +66,10 @@ python translate.py -i slides.pptx -o slides_en.pptx --verbose
 |------|---------|-------------|
 | `-i / --input` | *(required)* | `.pptx` file or folder |
 | `-o / --output` | `./translated` | Output file or folder |
-| `--skip-images` | off | Skip OCR on embedded images |
+| `--skip-images` | off | Skip OCR on embedded images entirely |
 | `--confidence` | `60` | Min Tesseract word confidence (0–100) |
-| `--lang` | `kor` | Tesseract language code (`kor+eng` for mixed) |
+| `--min-text-height` | `18` | Min pixel height of OCR text block to include in notes. Increase to skip smaller text, decrease to capture more. |
+| `--lang` | `kor` | Tesseract language code (`kor+eng` for mixed slides) |
 | `--dry-run` | off | Print translations, write nothing |
 | `--verbose` | off | Debug logging |
 
@@ -72,34 +77,35 @@ python translate.py -i slides.pptx -o slides_en.pptx --verbose
 
 ## What gets translated
 
-| Content | Translated? |
-|---------|------------|
-| Slide titles | ✅ |
-| Body text / bullet points | ✅ |
-| Text boxes | ✅ |
-| Table cells | ✅ |
-| Group shapes (recursively) | ✅ |
-| Speaker notes | ✅ |
-| Embedded images (JPEG/PNG) | ✅ via Tesseract OCR |
+| Content | How |
+|---------|-----|
+| Slide titles | ✅ In-place (text replaced, formatting preserved) |
+| Body text / bullet points | ✅ In-place |
+| Text boxes | ✅ In-place |
+| Table cells | ✅ In-place |
+| Group shapes (recursively) | ✅ In-place |
+| Speaker notes | ✅ In-place |
+| Embedded images (JPEG/PNG) | ✅ OCR → translated text appended to **speaker notes** |
 | Embedded EMF/WMF vectors | ⚠️ Skipped (not raster images) |
-| Rotated diagram labels | ⚠️ Best-effort |
+| Rotated diagram labels | ⚠️ Best-effort by Tesseract |
+
+> **Images are never modified.** Korean text found in images is extracted via
+> Tesseract OCR, translated, and appended to the slide's speaker notes under
+> the header `── Image Text (auto-translated) ──`. This avoids any risk of
+> image corruption or layout breakage.
 
 ---
 
 ## Known Limitations
 
-- **Rotated text** on flowchart arrows may be missed or imprecise — Tesseract
-  handles horizontal text best.
-- **Very small labels** (<12 px in the image) are often below Tesseract's
-  detection threshold. Try `--confidence 40` to catch more (at the cost of
-  more false positives).
-- **English text is ~30% longer** than Korean on average. The font is
-  auto-shrunk to fit each block's bounding box; very tight diagram boxes
-  may display in a small font.
-- **Textured / gradient backgrounds** use an averaged colour fill — the patch
-  may be slightly visible on complex backgrounds.
+- **Rotated text** on flowchart arrows may be missed — Tesseract handles
+  horizontal text best.
+- **Very small labels** are skipped by default (`--min-text-height 18`).
+  Lower this value to capture smaller text, at the cost of more noise.
 - **Translation quality** depends on argostranslate's Helsinki-NLP model.
   Technical jargon and acronyms are usually preserved as-is.
+- **Image text in notes only** — the flowchart images themselves remain in
+  Korean; the English translation appears in the notes pane below each slide.
 
 ---
 
@@ -110,9 +116,10 @@ pptx-translate/
 ├── translate.py              ← CLI entry point
 ├── requirements.txt
 ├── README.md
+├── dev_log.md                ← full session history and design decisions
 └── translator/
     ├── __init__.py
-    ├── text_engine.py        ← argostranslate wrapper (ko→en)
-    ├── image_handler.py      ← Tesseract OCR + Pillow redraw pipeline
+    ├── text_engine.py        ← argostranslate wrapper (ko→en, offline-first)
+    ├── image_handler.py      ← Tesseract OCR; extract_text_for_notes()
     └── pptx_handler.py       ← python-pptx traversal + orchestration
 ```
