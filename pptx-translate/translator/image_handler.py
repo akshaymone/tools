@@ -1,24 +1,22 @@
 """
 translator/image_handler.py
 
-Pipeline:
-  1. Load image bytes → PIL.Image (upscale small images for better OCR)
-  2. pytesseract.image_to_data() with --psm 11 (sparse text, good for diagrams)
-  3. Filter by confidence threshold
-  4. Group words into logical text blocks (by block_num → par_num → line_num)
-  5. Translate each block as a whole (better context than word-by-word)
-  6. For each block:
-       a. Sample dominant background colour from the region border
-       b. Paint rectangle over original Korean text
-       c. Auto-fit Segoe UI font, wrap translated text within block bounds
-       d. Draw in contrasting foreground colour
-  7. Downscale back to original resolution and return as bytes
+Two operating modes
+-------------------
+1. extract_text_for_notes(image_bytes, min_height) [DEFAULT]
+   OCR the image, filter to only "considerable" text (rendered height >=
+   min_height pixels), translate each block, and return a list of
+   translated strings.  The image is NEVER modified.  The caller appends
+   the translated strings to the slide's speaker notes.
 
-Limitations (documented honestly):
-  - Rotated / diagonal text (common on flowchart arrows) is attempted via
-    OSD deskew but may not be 100% accurate.
-  - Very small labels (<12 px rendered height) are often skipped by Tesseract.
-  - Gradient or textured backgrounds yield approximate colour fills.
+2. process(image_bytes) [LEGACY — kept but not used by default]
+   Full in-place redraw pipeline: OCR → translate → paint over Korean →
+   draw English back onto the image.  Returns modified image bytes.
+   (Disabled by default because blob replacement is fragile across
+   python-pptx versions.)
+
+OCR uses --psm 11 (sparse text) which is best for flowchart diagrams
+where text is scattered in boxes and arrows, not continuous paragraphs.
 """
 
 import io
@@ -170,8 +168,8 @@ def _draw_block(draw, text: str, x: int, y: int, w: int, h: int, fg: tuple) -> N
 
 class ImageHandler:
     """
-    OCR a single image, translate detected Korean text blocks,
-    and redraw the English translation in place.
+    OCR a single image, translate detected Korean text blocks.
+    Supports two modes — see module docstring.
     """
 
     OCR_CONFIG = "--psm 11 --oem 3"   # sparse text mode — best for diagrams
@@ -182,21 +180,77 @@ class ImageHandler:
         self.ocr_lang = ocr_lang
 
     # ------------------------------------------------------------------
+    # Mode 1 — extract text for speaker notes (no image modification)
+    # ------------------------------------------------------------------
+
+    def extract_text_for_notes(
+        self,
+        image_bytes: bytes,
+        min_height: int = 18,
+    ) -> list[str]:
+        """
+        OCR *image_bytes*, keep only blocks whose rendered pixel height is
+        >= *min_height* (skips tiny labels and noise), translate each block
+        Korean→English, and return a list of translated strings.
+
+        The image is never modified.  Returns [] if nothing found.
+
+        Args:
+            image_bytes: Raw image bytes (PNG, JPEG, etc.)
+            min_height:  Minimum pixel height of a text block (after upscaling)
+                         to be included.  Default 18 px ≈ ~14 pt at 96 dpi —
+                         roughly "body text" size.  Increase to skip more.
+        """
+        from PIL import Image
+
+        img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        scale = self._compute_scale(img)
+        if scale > 1:
+            img = img.resize(
+                (img.width * scale, img.height * scale), Image.LANCZOS
+            )
+
+        df = self._ocr_dataframe(img)
+        if df is None or df.empty:
+            return []
+
+        results: list[str] = []
+
+        for (block_num,), block_df in df.groupby(["block_num"]):
+            for (par_num,), par_df in block_df.groupby(["par_num"]):
+                block_text, block_h = self._paragraph_text_and_height(par_df)
+                if not block_text:
+                    continue
+
+                # Skip small text — not "considerable"
+                if block_h < min_height:
+                    log.debug(f"    Skipping small text (h={block_h}px): {block_text[:30]!r}")
+                    continue
+
+                translated = self.engine.translate(block_text)
+                if translated and translated.strip() != block_text.strip():
+                    log.debug(f"    [{block_text[:40]!r}] → [{translated[:40]!r}]")
+                    results.append(translated.strip())
+
+        return results
+
+    # ------------------------------------------------------------------
+    # Mode 2 — OCR + in-place image redraw (legacy, not default)
+    # ------------------------------------------------------------------
 
     def process(self, image_bytes: bytes, content_type: str = "image/png") -> Optional[bytes]:
         """
-        Translate Korean text in *image_bytes*.
+        Translate Korean text in *image_bytes* by painting over the original
+        and redrawing English text.
 
         Returns modified image bytes (same format as input), or None if
         no translatable text was found.
         """
-        import pytesseract
         from PIL import Image
 
         img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
         orig_size = img.size
 
-        # Upscale small images — Tesseract accuracy degrades below ~150 dpi
         scale = self._compute_scale(img)
         if scale > 1:
             img = img.resize(
@@ -204,51 +258,17 @@ class ImageHandler:
             )
             log.debug(f"    Upscaled image {orig_size} → {img.size} (×{scale})")
 
-        # OCR
-        try:
-            df = pytesseract.image_to_data(
-                img,
-                lang=self.ocr_lang,
-                config=self.OCR_CONFIG,
-                output_type=pytesseract.Output.DATAFRAME,
-            )
-        except Exception as exc:
-            err = str(exc)
-            # Give a clear, actionable message for the most common failure
-            if "tessdata" in err and self.ocr_lang in err:
-                log.warning(
-                    f"    Tesseract OCR skipped — missing language data for '{self.ocr_lang}'.\n"
-                    f"    Fix: Download kor.traineddata and place it in your tessdata folder:\n"
-                    f"      https://github.com/tesseract-ocr/tessdata/raw/main/kor.traineddata\n"
-                    f"    Then save it to:\n"
-                    f"      C:\\Users\\%USERNAME%\\AppData\\Local\\Programs\\Tesseract-OCR\\tessdata\\kor.traineddata\n"
-                    f"    (Run this once with internet, then OCR will work fully offline.)"
-                )
-            else:
-                log.warning(f"    Tesseract OCR error: {exc}")
+        df = self._ocr_dataframe(img)
+        if df is None or df.empty:
             return None
 
-        # Filter
-        df = df[df["conf"] >= self.confidence].copy()
-        df = df[df["text"].notna()]
-        df["text"] = df["text"].astype(str).str.strip()
-        df = df[df["text"] != ""]
-
-        if df.empty:
-            log.debug("    No confident text detected.")
-            return None
-
-        # Translate and redraw
         modified = self._redraw(img, df)
-
         if not modified:
             return None
 
-        # Downscale back to original resolution
         if scale > 1:
             img = img.resize(orig_size, Image.LANCZOS)
 
-        # Serialise in original format
         save_fmt = self._fmt(content_type)
         buf = io.BytesIO()
         if save_fmt == "JPEG":
@@ -258,8 +278,55 @@ class ImageHandler:
         return buf.getvalue()
 
     # ------------------------------------------------------------------
-    # Internal helpers
+    # Shared internal helpers
     # ------------------------------------------------------------------
+
+    def _ocr_dataframe(self, img):
+        """Run Tesseract on *img* and return a confidence-filtered DataFrame, or None on error."""
+        import pytesseract
+
+        try:
+            df = pytesseract.image_to_data(
+                img,
+                lang=self.ocr_lang,
+                config=self.OCR_CONFIG,
+                output_type=pytesseract.Output.DATAFRAME,
+            )
+        except Exception as exc:
+            err = str(exc)
+            if "tessdata" in err and self.ocr_lang in err:
+                log.warning(
+                    f"    Tesseract OCR skipped — missing language data for '{self.ocr_lang}'.\n"
+                    f"    Fix: Download kor.traineddata from:\n"
+                    f"      https://github.com/tesseract-ocr/tessdata/raw/main/kor.traineddata\n"
+                    f"    Save it to your Tesseract tessdata/ folder and retry."
+                )
+            else:
+                log.warning(f"    Tesseract OCR error: {exc}")
+            return None
+
+        df = df[df["conf"] >= self.confidence].copy()
+        df = df[df["text"].notna()]
+        df["text"] = df["text"].astype(str).str.strip()
+        df = df[df["text"] != ""]
+        return df
+
+    @staticmethod
+    def _paragraph_text_and_height(par_df) -> tuple[str, int]:
+        """Return (joined paragraph text, max line height in pixels)."""
+        lines = []
+        max_h = 0
+        for (line_num,), line_df in par_df.groupby(["line_num"]):
+            words = line_df[line_df["text"].str.strip() != ""]
+            if words.empty:
+                continue
+            line_text = " ".join(words["text"].tolist()).strip()
+            if not line_text:
+                continue
+            h = int(words["height"].max())
+            max_h = max(max_h, h)
+            lines.append(line_text)
+        return " ".join(lines).strip(), max_h
 
     @staticmethod
     def _compute_scale(img) -> int:
@@ -287,7 +354,6 @@ class ImageHandler:
         draw = ImageDraw.Draw(img)
         modified = False
 
-        # Group: block → paragraph (translate whole paragraph for context)
         for (block_num,), block_df in df.groupby(["block_num"]):
             for (par_num,), par_df in block_df.groupby(["par_num"]):
                 changed = self._process_paragraph(draw, img, par_df)
@@ -301,7 +367,6 @@ class ImageHandler:
         Collect all lines in a paragraph, translate as a unit, redraw.
         Returns True if the paragraph was modified.
         """
-        # Build line-by-line text list with bounding boxes
         line_data: list[dict] = []
         for (line_num,), line_df in par_df.groupby(["line_num"]):
             words = line_df[line_df["text"].str.strip() != ""]
@@ -322,17 +387,15 @@ class ImageHandler:
         if not line_data:
             return False
 
-        # Translate whole paragraph at once (newline-joined)
         src_text = "\n".join(d["text"] for d in line_data)
         translated = self.engine.translate(src_text)
 
         if translated.strip() == src_text.strip():
-            return False  # nothing changed (already English or engine returned same)
+            return False
 
         log.debug(f"    [{src_text[:40].replace(chr(10), ' ')}]")
         log.debug(f"    → [{translated[:40].replace(chr(10), ' ')}]")
 
-        # Overall bounding box of the whole paragraph
         all_left = min(d["left"] for d in line_data)
         all_top = min(d["top"] for d in line_data)
         all_right = max(d["right"] for d in line_data)
@@ -343,15 +406,11 @@ class ImageHandler:
         if block_w <= 0 or block_h <= 0:
             return False
 
-        # Sample background from original image before painting
         bg = _sample_bg_color(img, all_left, all_top, all_right, all_bottom)
         fg = _fg_color(bg)
 
-        # Paint over original Korean text
         draw.rectangle([all_left, all_top, all_right, all_bottom], fill=bg)
-
-        # Draw translated English text with auto-fit + word-wrap
-        flat_text = " ".join(translated.split())  # collapse newlines for flow
+        flat_text = " ".join(translated.split())
         _draw_block(draw, flat_text, all_left, all_top, block_w, block_h, fg)
 
         return True

@@ -63,6 +63,7 @@ Examples:
   python translate.py -i slides.pptx --dry-run
   python translate.py -i slides.pptx --skip-images --verbose
   python translate.py -i ./docs/ --confidence 70 --verbose
+  python translate.py -i slides.pptx --min-text-height 25   # only larger text in notes
         """,
     )
     parser.add_argument("-i", "--input", required=True, metavar="PATH",
@@ -73,6 +74,9 @@ Examples:
                         help="Skip OCR + translation of embedded images")
     parser.add_argument("--confidence", type=int, default=60, metavar="0-100",
                         help="Minimum Tesseract OCR confidence to accept a word (default: 60)")
+    parser.add_argument("--min-text-height", type=int, default=18, metavar="PX",
+                        help="Min pixel height of an OCR text block to include in speaker notes "
+                             "(default: 18). Increase to skip smaller text, decrease to capture more.")
     parser.add_argument("--lang", default="kor", metavar="LANG",
                         help="Tesseract OCR language code (default: kor). "
                              "Use 'kor+eng' if slides mix both languages.")
@@ -117,6 +121,7 @@ def main() -> None:
         confidence=args.confidence,
         ocr_lang=args.lang,
         dry_run=args.dry_run,
+        min_text_height=args.min_text_height,
     )
 
     failed = []

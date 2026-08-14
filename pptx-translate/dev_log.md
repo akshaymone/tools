@@ -182,3 +182,67 @@ python translate.py -i C:\path\to\docs\ -o C:\output\
 - [ ] Handle embedded charts/SmartArt (currently only bitmap images are processed)
 - [ ] Confidence auto-tuning per image based on image resolution
 - [ ] Progress bar per slide (not just per file)
+
+---
+
+## Session 3 — 2026-08-14 (Conversation `be6cbda0`, continued)
+
+### Bug 1: `'SlidePart' object has no attribute 'related_parts'`
+
+**Error:**
+```
+[WARNING] Failed to replace image blob [그림 2]: 'SlidePart' object has no attribute 'related_parts'
+```
+
+**Root cause:** `pptx_handler.py` line `shape.part.related_parts[rId]` uses `related_parts` (dict-style), which does not exist on `SlidePart`. The correct API is `shape.part.related_part(rId)` (method call). However rather than patching this, the entire image-blob-swap approach was abandoned in favour of a safer design.
+
+### Bug 2: Some image text not getting translated
+
+**Root cause:** The old approach required modifying the image in-place (OCR → paint over Korean → draw English). This was fragile for complex flowcharts and failed silently on many images.
+
+### New Approach: Image text → Speaker Notes
+
+**Decision:** Don't modify images at all. Instead:
+1. OCR each image with Tesseract (`--psm 11` sparse mode)
+2. Filter to only **considerable text** — blocks whose rendered pixel height ≥ `min_height` (default 18 px ≈ ~14 pt body text). Small axis labels, watermarks, tiny captions are skipped.
+3. Translate each block
+4. **Append all translations to the slide's speaker notes** under a labelled section `── Image Text (auto-translated) ──`
+
+**Benefits:**
+- Images are never touched → no corruption, no blob-swap errors
+- Notes are easy to read while presenting
+- `--min-text-height` CLI flag lets user tune what counts as "considerable"
+
+### Files Changed
+
+| File | What changed |
+|---|---|
+| `translator/image_handler.py` | Added `extract_text_for_notes(image_bytes, min_height)` method. Added `_ocr_dataframe()` and `_paragraph_text_and_height()` shared helpers. Old `process()` kept as legacy. |
+| `translator/pptx_handler.py` | `_process_slide()` now collects image translations into a list, then calls `_append_image_notes()`. `_process_picture()` uses `extract_text_for_notes()` instead of blob replacement. Added `_MIN_TEXT_HEIGHT_PX = 18` constant. Added `min_text_height` param to `__init__`. |
+| `translate.py` | Added `--min-text-height PX` CLI flag (default 18). Passes to `PPTXHandler`. |
+
+### Speaker Notes Output Format (per slide)
+
+```
+[existing notes text, translated]
+
+── Image Text (auto-translated) ──
+1. Flow data enters the preprocessing module
+2. System architecture overview
+3. Output validation layer
+```
+
+### CLI Usage
+
+```powershell
+# Default — includes text >= 18px height in notes
+python translate.py -i slides.pptx -o output/
+
+# Stricter — only large headings (increase threshold)
+python translate.py -i slides.pptx -o output/ --min-text-height 30
+
+# More inclusive — smaller text too
+python translate.py -i slides.pptx -o output/ --min-text-height 12
+```
+
+- **Commit `(pending push)`** — `fix: replace image blob-swap with notes-based OCR translation`

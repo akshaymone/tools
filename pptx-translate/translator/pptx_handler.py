@@ -5,19 +5,22 @@ Walks every slide in a Presentation and translates:
   - Text frames (titles, body, text boxes)
   - Tables (cell by cell)
   - Group shapes (recursively unwrapped)
-  - Embedded picture shapes (via ImageHandler OCR pipeline)
   - Speaker notes
+  - Embedded picture shapes → OCR significant text → append to speaker notes
+    (images are NEVER modified; translation is placed in the notes pane)
 
 Formatting contract:
   Translation is done at the paragraph level.  The translated string is
   written into the FIRST non-empty run of each paragraph; all subsequent
   runs in that paragraph are cleared.  This preserves the paragraph's
-  font, size, bold, italic, colour, and alignment properties, which live
-  on the run/paragraph level in python-pptx.
+  font, size, bold, italic, colour, and alignment properties.
 
   For tables, the same logic applies per cell.
 
-  Image blobs are replaced in-place by swapping the part's _blob attribute.
+  For images: only text blocks >= min_height pixels tall are translated
+  (skips tiny axis labels, watermarks, etc.).  All translations from all
+  images on a slide are collected and appended to the slide's speaker notes
+  under a clearly labelled section.
 """
 
 import logging
@@ -30,6 +33,11 @@ log = logging.getLogger(__name__)
 _MSO_GROUP   = 6   # MsoShapeType.GROUP
 _MSO_PICTURE = 13  # MsoShapeType.PICTURE
 
+# Minimum OCR word-height (pixels, after upscaling) to include in notes.
+# 18 px at 2× upscale ≈ 9 px original ≈ ~14 pt — "body text" size.
+# Increase this to skip smaller text.
+_MIN_TEXT_HEIGHT_PX = 18
+
 
 class PPTXHandler:
     def __init__(
@@ -39,9 +47,11 @@ class PPTXHandler:
         confidence: int = 60,
         ocr_lang: str = "kor",
         dry_run: bool = False,
+        min_text_height: int = _MIN_TEXT_HEIGHT_PX,
     ) -> None:
         self.engine = engine
         self.dry_run = dry_run
+        self.min_text_height = min_text_height
 
         if skip_images:
             self.image_handler: Optional[object] = None
@@ -76,25 +86,63 @@ class PPTXHandler:
     # ------------------------------------------------------------------
 
     def _process_slide(self, slide) -> None:
-        for shape in slide.shapes:
-            self._process_shape(shape)
+        # Collect image OCR translations first (before touching notes)
+        image_translations: list[str] = []
 
-        # Speaker notes
+        for shape in slide.shapes:
+            self._process_shape(shape, image_translations)
+
+        # Translate existing speaker notes text
         if slide.has_notes_slide:
             notes_tf = slide.notes_slide.notes_text_frame
             self._translate_text_frame(notes_tf, label="[notes]")
+
+        # Append image translations to speaker notes
+        if image_translations and not self.dry_run:
+            self._append_image_notes(slide, image_translations)
+        elif image_translations and self.dry_run:
+            log.info(f"      [DRY] Would append {len(image_translations)} image translation(s) to notes.")
+
+    def _append_image_notes(self, slide, translations: list[str]) -> None:
+        """Append translated image text to the slide's speaker notes pane."""
+        from pptx.util import Pt
+        from lxml import etree
+
+        # Ensure notes slide exists
+        notes_slide = slide.notes_slide
+        tf = notes_slide.notes_text_frame
+
+        # Add a blank separator paragraph
+        sep_para = tf.add_paragraph()
+        sep_para.text = ""
+
+        # Header paragraph
+        header_para = tf.add_paragraph()
+        header_para.text = "── Image Text (auto-translated) ──"
+        if header_para.runs:
+            header_para.runs[0].font.bold = True
+            header_para.runs[0].font.size = Pt(9)
+
+        # One paragraph per translated block
+        for i, text in enumerate(translations, 1):
+            p = tf.add_paragraph()
+            p.text = f"{i}. {text}"
+            if p.runs:
+                p.runs[0].font.size = Pt(9)
+
+        log.debug(f"      Appended {len(translations)} image translation(s) to notes.")
 
     # ------------------------------------------------------------------
     # Shape dispatch
     # ------------------------------------------------------------------
 
-    def _process_shape(self, shape) -> None:
+    def _process_shape(self, shape, image_translations: list) -> None:
         shape_type = shape.shape_type
 
         # Recursively unwrap group shapes
         if shape_type == _MSO_GROUP:
             for child in shape.shapes:
-                self._process_shape(child)
+                self._process_shape(child, image_translations)
             return
 
         # Text frames (text boxes, placeholders, auto-shapes with text)
@@ -105,9 +153,9 @@ class PPTXHandler:
         if shape.has_table:
             self._translate_table(shape.table)
 
-        # Embedded pictures → OCR pipeline
+        # Embedded pictures → OCR → speaker notes (image NOT modified)
         if self.image_handler is not None and shape_type == _MSO_PICTURE:
-            self._process_picture(shape)
+            self._process_picture(shape, image_translations)
 
     # ------------------------------------------------------------------
     # Text frame / paragraph translation
@@ -149,11 +197,14 @@ class PPTXHandler:
                 self._translate_text_frame(cell.text_frame, label="[table]")
 
     # ------------------------------------------------------------------
-    # Image / picture translation
+    # Image processing → speaker notes
     # ------------------------------------------------------------------
 
-    def _process_picture(self, shape) -> None:
-        """OCR the image, translate detected text, replace blob in-place."""
+    def _process_picture(self, shape, image_translations: list) -> None:
+        """
+        OCR the image for significant text, translate, collect into
+        image_translations list.  The image itself is NOT modified.
+        """
         try:
             image = shape.image
         except Exception as exc:
@@ -163,27 +214,21 @@ class PPTXHandler:
         size_kb = len(image.blob) // 1024
         log.debug(f"      OCR → shape {shape.name!r} ({size_kb} KB, {image.content_type})")
 
+        if self.dry_run:
+            log.info(f"      [DRY] Would OCR image shape {shape.name!r} for speaker notes.")
+            return
+
         try:
-            new_blob = self.image_handler.process(
-                image.blob, content_type=image.content_type
+            texts = self.image_handler.extract_text_for_notes(
+                image.blob,
+                min_height=self.min_text_height,
             )
         except Exception as exc:
-            log.warning(f"      Image OCR/translation failed [{shape.name}]: {exc}")
+            log.warning(f"      Image OCR failed [{shape.name}]: {exc}")
             return
 
-        if new_blob is None:
-            log.debug("      No Korean text found — image unchanged.")
-            return
-
-        if self.dry_run:
-            log.info(f"      [DRY] Image shape {shape.name!r} would be translated.")
-            return
-
-        # Replace the image blob inside the PPTX package in-place
-        try:
-            rId = shape._element.blipFill.blip.rEmbed
-            img_part = shape.part.related_parts[rId]
-            img_part._blob = new_blob
-            log.debug(f"      Image blob replaced ({len(new_blob)//1024} KB).")
-        except Exception as exc:
-            log.warning(f"      Failed to replace image blob [{shape.name}]: {exc}")
+        if texts:
+            log.debug(f"      Found {len(texts)} translatable block(s) in {shape.name!r}.")
+            image_translations.extend(texts)
+        else:
+            log.debug(f"      No considerable Korean text found in {shape.name!r}.")
