@@ -100,7 +100,6 @@ def main() -> None:
         engine = TextEngine()
     except Exception as exc:
         log.error(f"Translation engine failed to load: {exc}")
-        log.error("Ensure you have internet access for the first model download.")
         sys.exit(1)
 
     from translator.pptx_handler import PPTXHandler

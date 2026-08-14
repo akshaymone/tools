@@ -2,12 +2,24 @@
 translator/text_engine.py
 
 Wraps argostranslate for offline Korean → English translation.
-On first run (if the ko→en model is not installed), it downloads
-the model package from the argostranslate registry. Every subsequent
-run is fully offline.
+
+Model lifecycle
+---------------
+1. Check if ko→en model is already installed in argostranslate's local store.
+   If yes → load it, no network needed.
+2. If not installed, check for a cached .argosmodel file in the standard
+   argostranslate data directory (left over from a previous download).
+   If found → install from file, no network needed.
+3. If nothing is cached locally → download from the argostranslate registry
+   (requires internet, one-time only).  Raises a clear error if offline.
+
+Once you have successfully run the tool with internet once,
+all future runs are 100% offline.
 """
 
 import logging
+import os
+from pathlib import Path
 from typing import Optional
 
 log = logging.getLogger(__name__)
@@ -31,24 +43,46 @@ class TextEngine:
         """Return an argostranslate ITranslation object, installing if needed."""
         import argostranslate.translate as at_translate
 
+        # Step 1 — already installed in local registry?
         translation = self._find_installed(at_translate)
         if translation:
-            log.debug("Argostranslate ko→en model loaded from local cache.")
+            log.info("ko→en model already installed — running fully offline.")
             return translation
 
+        # Step 2 — cached .argosmodel file on disk from a previous download?
+        cached_path = self._find_cached_model_file()
+        if cached_path:
+            log.info(f"Found cached model file: {cached_path}")
+            log.info("Installing from local file (no network needed) ...")
+            self._install_from_file(cached_path)
+            translation = self._find_installed(at_translate)
+            if translation:
+                log.info("Model installed from cache. All future runs are fully offline.")
+                return translation
+            log.warning("Installing from cached file did not register the model; will try download.")
+
+        # Step 3 — download (needs internet, one-time only)
         log.info(
             "ko→en translation model not found locally. "
             "Downloading from argostranslate registry (one-time only) ..."
         )
-        self._install_package()
+        try:
+            self._download_and_install()
+        except Exception as exc:
+            raise RuntimeError(
+                "Could not download the ko→en model.\n"
+                "  → Make sure you are connected to the internet for the FIRST run.\n"
+                "  → After a successful download, all future runs work offline.\n"
+                f"  → Original error: {exc}"
+            ) from exc
 
         translation = self._find_installed(at_translate)
         if translation is None:
             raise RuntimeError(
-                "Failed to load ko→en translation model after installation. "
-                "Check your internet connection or argostranslate version."
+                "Failed to load ko→en translation model even after installation. "
+                "Try running again with internet enabled."
             )
-        log.info("Model installed. All future runs are fully offline.")
+        log.info("Model downloaded and installed. All future runs are fully offline.")
         return translation
 
     def _find_installed(self, at_translate) -> Optional[object]:
@@ -84,7 +118,40 @@ class TextEngine:
             log.debug(f"Fallback language walk also failed: {exc}")
             return None
 
-    def _install_package(self) -> None:
+    def _find_cached_model_file(self) -> Optional[Path]:
+        """
+        Look for a previously downloaded .argosmodel file in argostranslate's
+        data directory.  These are left on disk after a download, so if the
+        user ran with internet once, we can reinstall from the file offline.
+        """
+        try:
+            import argostranslate.settings as at_settings
+            data_dir = Path(at_settings.data_dir)
+        except Exception:
+            # Fallback locations used by argostranslate on Windows / Linux
+            data_dir = Path(os.environ.get("APPDATA", str(Path.home()))) / "argos-translate"
+
+        # Search common subdirectories
+        search_dirs = [
+            data_dir,
+            data_dir / "packages",
+            data_dir / "downloads",
+        ]
+        pattern = f"*{self.FROM_CODE}*{self.TO_CODE}*.argosmodel"
+        for d in search_dirs:
+            if d.is_dir():
+                matches = list(d.glob(pattern))
+                if matches:
+                    return matches[0]
+        return None
+
+    def _install_from_file(self, model_path: Path) -> None:
+        """Install a .argosmodel package from a local file path."""
+        import argostranslate.package as at_pkg
+        at_pkg.install_from_path(str(model_path))
+
+    def _download_and_install(self) -> None:
+        """Download the ko→en package from the argostranslate online registry."""
         import argostranslate.package as at_pkg
 
         at_pkg.update_package_index()
