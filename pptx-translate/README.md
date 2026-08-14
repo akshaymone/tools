@@ -1,7 +1,8 @@
-# pptx-translate (Offline PPTX Translator & Extractor)
+# translator (Korean PPTX Translator)
 
 Offline PowerPoint text translator and Markdown extractor.  
-Translates Korean `.pptx` files to English by directly manipulating XML to preserve exact styling. Also includes a utility to extract all slide text and embedded images into a clean Markdown layout. Uses local Tesseract OCR to extract image text.
+Translates Korean `.pptx` files to English by directly manipulating XML to preserve exact styling. Image text is extracted via local Tesseract OCR.
+Now powered by the `agents` package LLM models (supports both local Ollama and the Office API).
 
 ---
 
@@ -17,9 +18,15 @@ Translates Korean `.pptx` files to English by directly manipulating XML to prese
 
 ## Setup
 
+The tool is packaged as `translator` and relies on the `agents` package being installed in your environment.
+
 ```powershell
-# 1. Install Python dependencies
-pip install -r requirements.txt
+# 1. Install directly from Git
+pip install "git+https://github.com/akshaymone/agents.git#subdirectory=tools/pptx-translate"
+
+# 2. Configure Environment
+# Copy the example config and adjust as needed
+copy .env.example .env
 ```
 
 > **Missing Korean tessdata?**  
@@ -30,15 +37,19 @@ pip install -r requirements.txt
 
 ## Usage
 
-### 1. Direct XML Translation (`xml_translate.py`) - Primary Tool
+### 1. Direct XML Translation (Primary Tool)
 
-This script directly translates Korean `.pptx` files into English `.pptx` files by unzipping the archive and manipulating the `<a:t>` tags. This perfectly preserves all fonts, styles, and layouts.
+This command translates Korean `.pptx` files into English `.pptx` files by unzipping the archive and manipulating the `<a:t>` tags. This perfectly preserves all fonts, styles, and layouts.
 
-Image text is extracted via Tesseract and appended to the slide's Speaker Notes in the format: `Image Text: [Korean] -> [English]`.
+It leverages the LLM setup from the `agents` package.
 
 ```powershell
-# Translate a single file (creates a new translated .pptx)
-python xml_translate.py -i input.pptx -o output_english.pptx
+# Translate using the default provider from your .env
+translator -i input.pptx -o output_english.pptx
+
+# Force a specific provider
+translator -i input.pptx -o output_english.pptx --provider ollama
+translator -i input.pptx -o output_english.pptx --provider office
 ```
 
 ### 2. Markdown Extraction (`extract.py`) - Secondary Tool
@@ -54,42 +65,7 @@ python extract.py -i C:\docs\pptx\ -o C:\docs\extracted\
 
 # Skip image OCR and extraction (faster)
 python extract.py -i slides.pptx --skip-images
-
-# Raise OCR confidence bar (fewer but more accurate detections on images)
-python extract.py -i slides.pptx --confidence 75
-
-# Verbose debug output
-python extract.py -i slides.pptx --verbose
 ```
-
-### `extract.py` Flags
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `-i / --input` | *(required)* | `.pptx` file or folder |
-| `-o / --output` | `./extracted` | Output folder or `.md` file |
-| `--skip-images` | off | Skip saving images and performing OCR |
-| `--confidence` | `60` | Min Tesseract word confidence (0–100) |
-| `--min-text-height` | `18` | Min pixel height of OCR text block. |
-| `--lang` | `kor` | Tesseract language code |
-| `--verbose` | off | Debug logging |
-
----
-
-## What gets extracted (via `extract.py`)
-
-| Content | How |
-|---------|-----|
-| Slide titles | ✅ Markdown list |
-| Body text / bullet points | ✅ Markdown list |
-| Text boxes | ✅ Markdown list |
-| Table cells | ✅ Markdown tables |
-| Group shapes (recursively) | ✅ Markdown list |
-| Speaker notes | ✅ Markdown under `### Speaker Notes` |
-| Embedded images (JPEG/PNG) | ✅ Saved to disk and linked in Markdown |
-| Image Text (Korean) | ✅ Extracted via OCR and placed under image links |
-
-> **100% Offline.** All processing happens locally on your machine. Images are extracted as they are, without modification. 
 
 ---
 
@@ -97,13 +73,11 @@ python extract.py -i slides.pptx --verbose
  
  ```
  pptx-translate/
- ├── xml_translate.py        ← Direct XML translation CLI (Primary)
+ ├── pyproject.toml          ← Packaging and dependencies
+ ├── .env.example            ← Configuration template
+ ├── translator/             ← Main package source
+ │   └── main.py             ← Direct XML translation CLI (`translator` command)
  ├── extract.py              ← Markdown extraction CLI
- ├── requirements.txt
  ├── README.md
- ├── dev_log.md              ← full session history and design decisions
- └── translator/
-     ├── __init__.py
-     ├── image_handler.py    ← Tesseract OCR
-     └── pptx_handler.py     ← python-pptx traversal + orchestration
+ └── dev_log.md              ← Full session history and design decisions
  ```
