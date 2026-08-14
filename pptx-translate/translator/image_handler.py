@@ -21,11 +21,78 @@ where text is scattered in boxes and arrows, not continuous paragraphs.
 
 import io
 import logging
+import re
+import unicodedata
 from collections import Counter
 from pathlib import Path
 from typing import Optional
 
 log = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Korean text quality filters
+# ---------------------------------------------------------------------------
+
+# Hangul Unicode ranges:
+#   AC00–D7A3  Hangul Syllables (가–힣)  — the vast majority of Korean text
+#   1100–11FF  Hangul Jamo (individual consonants/vowels)
+#   3130–318F  Hangul Compatibility Jamo
+_HANGUL_RE = re.compile(r"[\uAC00-\uD7A3\u1100-\u11FF\u3130-\u318F]")
+
+# Minimum fraction of characters that must be Hangul for a block to be translated
+_MIN_KOREAN_RATIO = 0.25
+
+# Minimum number of Hangul characters required (filters out single-syllable noise)
+_MIN_HANGUL_CHARS = 3
+
+
+def _korean_ratio(text: str) -> float:
+    """Return the fraction of characters in *text* that are Hangul."""
+    if not text:
+        return 0.0
+    hangul = len(_HANGUL_RE.findall(text))
+    return hangul / len(text)
+
+
+def _is_korean_text(text: str) -> bool:
+    """
+    Return True if *text* is worth translating:
+      - Contains at least _MIN_HANGUL_CHARS Hangul characters, AND
+      - At least _MIN_KOREAN_RATIO of all characters are Hangul.
+
+    This filters out:
+      - Pure English/number fragments produced by OCR noise
+      - Single Korean syllable detections (meaningless in isolation)
+      - Mixed symbol/number strings that confuse argostranslate
+    """
+    hangul_count = len(_HANGUL_RE.findall(text))
+    if hangul_count < _MIN_HANGUL_CHARS:
+        return False
+    return _korean_ratio(text) >= _MIN_KOREAN_RATIO
+
+
+def _clean_ocr_text(text: str) -> str:
+    """
+    Light cleanup of OCR output before translation:
+      - Collapse runs of whitespace / newlines
+      - Strip leading/trailing punctuation and stray ASCII symbols
+        that Tesseract often inserts around Korean characters
+      - Remove lines that are purely numbers, punctuation, or ASCII
+        (keep lines that have at least one Hangul character)
+    """
+    lines = text.splitlines()
+    kept = []
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        # Keep the line only if it has at least one Hangul character
+        if _HANGUL_RE.search(line):
+            # Strip leading/trailing non-alphanumeric, non-Korean chars
+            line = re.sub(r"^[^\w\uAC00-\uD7A3]+|[^\w\uAC00-\uD7A3]+$", "", line)
+            if line:
+                kept.append(line)
+    return " ".join(kept).strip()
 
 # ---------------------------------------------------------------------------
 # Font resolution — tries Windows system fonts first, then Linux fallbacks
@@ -189,17 +256,17 @@ class ImageHandler:
         min_height: int = 18,
     ) -> list[str]:
         """
-        OCR *image_bytes*, keep only blocks whose rendered pixel height is
-        >= *min_height* (skips tiny labels and noise), translate each block
-        Korean→English, and return a list of translated strings.
+        OCR *image_bytes*, apply quality filters, translate genuine Korean
+        text blocks, and return a list of translated strings.
 
-        The image is never modified.  Returns [] if nothing found.
+        Filters applied before translation (in order):
+          1. Block pixel height >= min_height  (skips tiny labels)
+          2. Block contains >= 3 Hangul characters  (skips OCR noise / English)
+          3. >= 25% of characters are Hangul  (skips mixed symbol/number junk)
+          4. OCR noise stripped (stray ASCII around Korean)
+          5. Deduplication  (same Korean phrase appearing multiple times in image)
 
-        Args:
-            image_bytes: Raw image bytes (PNG, JPEG, etc.)
-            min_height:  Minimum pixel height of a text block (after upscaling)
-                         to be included.  Default 18 px ≈ ~14 pt at 96 dpi —
-                         roughly "body text" size.  Increase to skip more.
+        The image is never modified.  Returns [] if nothing passes filters.
         """
         from PIL import Image
 
@@ -215,6 +282,7 @@ class ImageHandler:
             return []
 
         results: list[str] = []
+        seen_raw: set[str] = set()   # deduplicate on the raw Korean text
 
         for (block_num,), block_df in df.groupby(["block_num"]):
             for (par_num,), par_df in block_df.groupby(["par_num"]):
@@ -222,15 +290,34 @@ class ImageHandler:
                 if not block_text:
                     continue
 
-                # Skip small text — not "considerable"
+                # Filter 1 — size: skip small text
                 if block_h < min_height:
-                    log.debug(f"    Skipping small text (h={block_h}px): {block_text[:30]!r}")
+                    log.debug(f"    [skip-size h={block_h}px] {block_text[:30]!r}")
                     continue
 
-                translated = self.engine.translate(block_text)
-                if translated and translated.strip() != block_text.strip():
-                    log.debug(f"    [{block_text[:40]!r}] → [{translated[:40]!r}]")
-                    results.append(translated.strip())
+                # Filter 2 & 3 — content: must be genuinely Korean
+                if not _is_korean_text(block_text):
+                    log.debug(f"    [skip-lang] {block_text[:40]!r}")
+                    continue
+
+                # Filter 4 — clean OCR noise before translating
+                cleaned = _clean_ocr_text(block_text)
+                if not cleaned or not _is_korean_text(cleaned):
+                    log.debug(f"    [skip-clean] {block_text[:40]!r}")
+                    continue
+
+                # Filter 5 — deduplicate
+                if cleaned in seen_raw:
+                    log.debug(f"    [skip-dup] {cleaned[:40]!r}")
+                    continue
+                seen_raw.add(cleaned)
+
+                translated = self.engine.translate(cleaned)
+                if not translated or translated.strip() == cleaned.strip():
+                    continue
+
+                log.debug(f"    [{cleaned[:40]!r}] → [{translated[:40]!r}]")
+                results.append(translated.strip())
 
         return results
 

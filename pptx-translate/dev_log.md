@@ -250,3 +250,44 @@ python translate.py -i slides.pptx -o output/ --min-text-height 12
 ```
 
 - **Commit `f3d25bb`** — `fix: replace image blob-swap with notes-based OCR translation`
+
+---
+
+## Session 4 — 2026-08-14 (Conversation `be6cbda0`, continued)
+
+### Bug: Unusual / Garbage Translation Output from Images (Offline Mode)
+
+**User report:** Image OCR translations in speaker notes are producing very unusual, incorrect text when running offline.
+
+**Root cause:** The `extract_text_for_notes()` method had **zero content quality filters** before sending text to argostranslate. Every OCR fragment — regardless of whether it was actual Korean text — was passed straight to the translator. This caused:
+
+| Problem | Result |
+|---|---|
+| OCR picks up English labels, axis numbers, symbols | Argostranslate tries to "translate" them → garbage |
+| Broken/partial Korean syllables from noisy images | Translator produces nonsense |
+| Very short 1–2 character fragments | Single-syllable translation is meaningless |
+| Same text block detected multiple times | Repeated identical notes |
+| Stray ASCII punctuation around Korean words | Distorts translation input |
+
+**Fix: 5-Layer Filter Pipeline in `extract_text_for_notes()`**
+
+Each OCR block now passes through these gates before reaching argostranslate:
+
+| Filter | What it checks | Threshold |
+|---|---|---|
+| 1. Size | Block pixel height >= min_height | Default 18 px |
+| 2. Hangul count | Must have >= 3 Hangul characters | `_MIN_HANGUL_CHARS = 3` |
+| 3. Korean ratio | >= 25% of chars must be Hangul | `_MIN_KOREAN_RATIO = 0.25` |
+| 4. OCR cleanup | Strip stray ASCII/punctuation around Korean; drop non-Korean lines | `_clean_ocr_text()` |
+| 5. Deduplication | Same Korean text only translated once per image | `seen_raw: set` |
+
+**New module-level helpers added to `image_handler.py`:**
+- `_HANGUL_RE` — compiled regex for Hangul Unicode ranges (AC00–D7A3, 1100–11FF, 3130–318F)
+- `_korean_ratio(text)` — fraction of characters that are Hangul
+- `_is_korean_text(text)` — True if text passes both Hangul count and ratio thresholds
+- `_clean_ocr_text(text)` — strips non-Korean lines, stray ASCII punctuation
+
+**Files changed:**
+- `translator/image_handler.py` — added `re`, `unicodedata` imports; added 4 filter utilities; rewrote `extract_text_for_notes()` with 5-filter pipeline
+
+- **Commit `(to be pushed)`** — `fix: add Korean content filters to image OCR — prevent garbage translation`
