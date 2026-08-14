@@ -1,0 +1,184 @@
+# pptx-translate — Developer Log
+
+> A running log of all development sessions, decisions, bugs, and fixes.
+> Updated after every conversation so any AI or human can quickly catch up.
+
+---
+
+## Project Overview
+
+**Goal:** Fully offline Python CLI tool to translate Korean `.pptx` files into English.  
+**Security constraint:** Zero network calls during translation — all data stays on-machine.  
+**Platform:** Windows (primary), cross-platform compatible.
+
+### Final Stack
+
+| Role | Library | Notes |
+|---|---|---|
+| PPTX I/O | `python-pptx` | Extract/write slide content |
+| Text translation | `argostranslate` | Offline, Helsinki-NLP models |
+| Image OCR | `pytesseract` | Wraps user's existing Tesseract install |
+| Image rendering | `Pillow` | Paint over Korean, draw English |
+| Progress | `tqdm` + `logging` | Batch visibility |
+| Font | Segoe UI | Windows native; DejaVu Sans fallback |
+
+### Repo Structure
+
+```
+pptx-translate/
+├── translate.py              ← CLI entry point
+├── requirements.txt
+├── README.md
+├── dev_log.md                ← this file
+└── translator/
+    ├── __init__.py
+    ├── text_engine.py        ← argostranslate ko→en wrapper
+    ├── image_handler.py      ← Tesseract OCR + Pillow redraw
+    └── pptx_handler.py       ← python-pptx traversal + orchestration
+```
+
+---
+
+## Session 1 — 2026-08-14 (Conversation `34c84aa5`)
+
+### Context
+
+User has Korean `.pptx` technical documents containing:
+- Slide text/titles
+- Image flowcharts
+- Complex mixed-content images
+
+Security requirement: **no data leaves the machine**. Requested a simple CLI tool.
+
+### Design Decisions
+
+| Decision | Rationale |
+|---|---|
+| Python (not PowerShell) | Richer ecosystem for PPTX, OCR, and NLP |
+| `argostranslate` for translation | Fully offline after one-time model download; Helsinki-NLP quality |
+| `pytesseract` for OCR | Wraps existing Tesseract install; no new OCR engine needed |
+| `--psm 11` (sparse text mode) | Best for flowcharts — text scattered in boxes/arrows, not paragraphs |
+| Translate per block, not per line | Preserves sentence context for better translation quality |
+| Paragraph-level write-back in PPTX | Preserves font size, bold, italic, colour on all runs |
+| Auto-scale small images 2–3× before OCR | Tesseract accuracy degrades significantly below ~150 dpi |
+| In-place blob swap via `img_part._blob` | Keeps all slide geometry/positioning intact |
+| English-only output | User explicitly requested no bilingual output |
+| Segoe UI font | Windows-native, clean for technical docs; DejaVu Sans fallback |
+
+### Image OCR Pipeline (Phase 2 Architecture)
+
+```
+Extract image bytes → PIL Image
+       ↓
+pytesseract.image_to_data(lang='kor', config='--psm 11')
+       ↓
+word-level bounding boxes + confidence + text
+       ↓
+Filter: drop below confidence threshold (default: 60%)
+       ↓
+Group adjacent words → logical text blocks (by line/block number)
+       ↓
+Translate each block (Korean → English)
+       ↓
+For each block:
+  1. Sample surrounding pixels → detect background color
+  2. Paint rectangle over original Korean text
+  3. Auto-fit font size (English is ~1.3× longer than Korean)
+  4. Draw translated English at same bounding box
+       ↓
+Re-embed modified image back into slide (same position/size)
+```
+
+### What Was Built
+
+- 7 files, 923 lines of code
+- **Commit `534143b`** — `feat: add offline Korean→English PPTX translator CLI`
+
+### Bug Found During Testing
+
+**Error:**
+```
+[ERROR] Translation engine failed to load: 'Language' object has no attribute 'translations'
+```
+
+**Root cause:** `Language.translations` attribute was removed in `argostranslate >= 1.9`.
+
+**Fix:** Switch to the stable public API `get_translation_from_codes('ko', 'en')` with a `getattr` fallback for older versions.
+
+- **Commit `1f5cdc7`** — `fix: update argostranslate API for newer versions`
+
+---
+
+## Session 2 — 2026-08-14 (Conversation `be6cbda0`)
+
+### Bug: Tool Fails When WiFi Is Off
+
+**User report:** Translation worked with internet on. Fails when wifi turned off.
+
+**Root cause analysis:**
+
+`argostranslate` saves the downloaded model as a `.argosmodel` file on disk AND registers it in a local package registry. The registry entry can be lost (e.g., if AppData is cleared, or argostranslate is reinstalled). When `get_translation_from_codes()` returns `None`, the old code immediately tried to re-download — which fails offline.
+
+**Fix: 3-Step Offline-First Model Loading**
+
+| Step | What it does | Network? |
+|---|---|---|
+| 1 | Check argostranslate's local installed registry | ❌ No |
+| 2 | Scan disk for cached `.argosmodel` file and install from it | ❌ No |
+| 3 | Download from argostranslate online registry | ✅ Yes (one-time only) |
+
+Once the model is downloaded once, **all future runs are 100% offline**, even if the registry is corrupted or argostranslate is reinstalled — Step 2 will find the cached file and recover without network.
+
+**Files changed:**
+- `translator/text_engine.py` — added `_find_cached_model_file()` and `_install_from_file()` methods; split `_install_package()` into `_download_and_install()` with a proper offline error message
+- `translate.py` — removed misleading "Ensure you have internet access" error line
+
+- **Commit `3921e64`** — `fix: proper offline support — install from cached .argosmodel if available`
+
+---
+
+## Commit History
+
+| Commit | Description |
+|---|---|
+| `534143b` | feat: add offline Korean→English PPTX translator CLI |
+| `1f5cdc7` | fix: update argostranslate API for newer versions |
+| `3921e64` | fix: proper offline support — install from cached .argosmodel if available |
+| `6707946` | fix: prevent stanza network calls offline; improve tessdata error message |
+
+---
+
+## Known Behaviours / Tips
+
+- **First run needs internet** — downloads the `ko→en` argostranslate model (~100MB). Every run after is offline.
+- **Tesseract Korean data** — `kor.traineddata` must be in your Tesseract `tessdata/` folder. Download from [tesseract-ocr/tessdata](https://github.com/tesseract-ocr/tessdata) if missing.
+- **Tune OCR confidence** — `--confidence 40` catches more text (but more noise); `--confidence 75` is stricter (may miss faint text). Default is `60`.
+- **Mixed-language slides** — use `--lang kor+eng` if slides mix Korean and English.
+- **Skip image OCR** — use `--skip-images` if you only care about translating text boxes.
+- **Dry run** — use `--dry-run` to preview without writing output files.
+
+---
+
+## Quick Start (Windows)
+
+```powershell
+# 1. Install dependencies
+pip install -r requirements.txt
+
+# 2. First-time model download (internet required — ONE TIME ONLY)
+python translate.py -i any_file.pptx -o ./output/
+# It auto-downloads the model on first run
+
+# 3. All subsequent runs — fully offline
+python translate.py -i C:\path\to\docs\ -o C:\output\
+```
+
+---
+
+## Open Items / Future Ideas
+
+- [ ] Support other language pairs (e.g., Japanese `ja→en`, Chinese `zh→en`)
+- [ ] Add `--download-model` flag for an explicit one-time setup step separate from translation
+- [ ] Handle embedded charts/SmartArt (currently only bitmap images are processed)
+- [ ] Confidence auto-tuning per image based on image resolution
+- [ ] Progress bar per slide (not just per file)
