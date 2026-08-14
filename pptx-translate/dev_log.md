@@ -409,3 +409,29 @@ Updated `safe_download` to use `*args, **kwargs` to dynamically accept any argum
 |---|---|
 | (Pending) | fix: fix import ordering bug bypassing Stanza offline patch in xml_translate.py |
 | (Pending) | fix: update Stanza offline patch to accept arbitrary kwargs to prevent TypeError |
+
+---
+
+## Session 8 — 2026-08-14 (Conversation `Current`)
+
+### Context
+User requested to convert the `pptx-translate` tool into a standalone installable Python package named `translator`, and completely replace the `argostranslate` engine with the LLM models provided by the `agents` package (using local Ollama or the Office API).
+
+### Design Decisions
+- **Packaging**: Converted the directory to a standard Python package using `pyproject.toml`. The main entry point `translator` is exposed as a console script.
+- **Removed Argos**: Stripped out all `argostranslate` logic, requirements, and the complex offline Stanza patching.
+- **Integrated Agents LLM**: Created an `LLMTranslator` class that dynamically imports `get_llm()` from the `agents` module (`agents.llm.factory`).
+- **Configuration**: Added `python-dotenv` and an `.env.example` file to allow configuring `LLM_PROVIDER`, `OLLAMA_BASE_URL`, `OLLAMA_MODEL`, etc.
+- **CLI Options**: Added `--provider` argument to the CLI so users can switch between `ollama` and `office` on the fly.
+
+### Files Changed
+- `pyproject.toml` (New)
+- `.env.example` (New)
+- `translator/main.py` (Renamed from `xml_translate.py` and updated)
+- `requirements.txt` (Removed `argostranslate`)
+
+### Commit History (Session 8)
+
+| Commit | Description |
+|---|---|
+| (Pending) | feat: convert pptx-translate to translator package and integrate agents LLM factory |

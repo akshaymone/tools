@@ -14,34 +14,16 @@ from PIL import Image
 from pptx import Presentation
 from tqdm import tqdm
 
-# --- Offline Stanza Patch ---
-# Stanza tries to fetch resources.json on every run. 
-# We intercept it so if it fails (offline), it just uses the cached version.
 try:
-    import stanza.resources.common
-    orig_download = stanza.resources.common.download_resources_json
-    def safe_download(*args, **kwargs):
-        try:
-            orig_download(*args, **kwargs)
-        except Exception as e:
-            target_dir = kwargs.get('dir', args[0] if len(args) > 0 else None)
-            target_filename = kwargs.get('filename', args[1] if len(args) > 1 else 'resources.json')
-            if target_dir and os.path.exists(os.path.join(target_dir, target_filename)):
-                import logging
-                logging.getLogger(__name__).info("Offline mode: Using cached Stanza resources.json")
-            else:
-                raise e
-    stanza.resources.common.download_resources_json = safe_download
+    from dotenv import load_dotenv
+    load_dotenv()
     
-    # Also patch pipeline.core in case it was already imported
-    import stanza.pipeline.core
-    stanza.pipeline.core.download_resources_json = safe_download
-except ImportError:
-    pass
-
-import argostranslate.package
-import argostranslate.translate
-
+    from agents.llm.factory import get_llm
+    from langchain_core.messages import SystemMessage, HumanMessage
+except ImportError as e:
+    print(f"Error importing from agents package: {e}")
+    print("Make sure you have installed the agents package dependencies.")
+    sys.exit(1)
 
 
 def setup_logging(verbose: bool):
@@ -63,51 +45,31 @@ NS = {
 for prefix, uri in NS.items():
     ET.register_namespace(prefix, uri)
 
-# --- Translation Engine ---
-def get_translator():
-    # Step 1: Check installed registry
-    try:
-        translator = argostranslate.translate.get_translation_from_codes('ko', 'en')
-        if translator:
-            return translator
-    except Exception:
-        pass
-        
-    log.info("Model not found in registry. Searching for cached offline model...")
-    
-    # Step 2: Search for cached .argosmodel locally
-    cache_dirs = [
-        Path.home() / ".local" / "cache" / "argos-translate" / "downloads",
-        Path.home() / ".cache" / "argos-translate" / "downloads",
-        Path(os.getenv("LOCALAPPDATA", "")) / "argos-translate" / "downloads" if os.name == 'nt' else None,
-        Path.cwd()
-    ]
-    
-    for d_path in filter(None, cache_dirs):
-        if d_path.exists():
-            models = list(d_path.rglob("translate-ko_en-*.argosmodel")) + list(d_path.rglob("*ko*en*.argosmodel"))
-            if models:
-                try:
-                    log.info(f"Installing from cached file: {models[0]}")
-                    argostranslate.package.install_from_path(models[0])
-                    return argostranslate.translate.get_translation_from_codes('ko', 'en')
-                except Exception as e:
-                    log.warning(f"Failed to install from cache: {e}")
-
-    # Step 3: Network download (one-time)
-    log.info("No cached model found. Requires internet for one-time download...")
-    try:
-        argostranslate.package.update_package_index()
-        available_packages = argostranslate.package.get_available_packages()
-        package_to_install = next(
-            filter(lambda x: x.from_code == 'ko' and x.to_code == 'en', available_packages)
+# --- Translation Engine (LLM) ---
+class LLMTranslator:
+    def __init__(self, provider: str = None):
+        self.llm = get_llm(provider=provider, temperature=0.1)
+        self.system_message = SystemMessage(
+            content="You are a professional translator. Translate the given Korean text into English. "
+                    "Return ONLY the English translation, with no explanation, no quotation marks, and no conversational text."
         )
-        log.info("Downloading ko->en model...")
-        argostranslate.package.install_from_path(package_to_install.download())
-        return argostranslate.translate.get_translation_from_codes('ko', 'en')
-    except Exception as e:
-        log.error(f"Failed to download model offline. Please run once with internet: {e}")
-        sys.exit(1)
+        
+    def translate(self, text: str) -> str:
+        if not text.strip():
+            return text
+        messages = [
+            self.system_message,
+            HumanMessage(content=text)
+        ]
+        try:
+            response = self.llm.invoke(messages)
+            return response.content.strip()
+        except Exception as e:
+            log.warning(f"LLM translation failed for text '{text[:20]}...': {e}")
+            return text
+
+def get_translator(provider: str = None):
+    return LLMTranslator(provider=provider)
 
 # --- Image OCR Helpers ---
 _HANGUL_RE = re.compile(r'[\uac00-\ud7a3\u1100-\u11ff\u3130-\u318f]')
@@ -212,8 +174,8 @@ def append_to_notes_xml(notes_xml_path: Path, new_text: str):
         tree.write(notes_xml_path, encoding='utf-8', xml_declaration=True)
 
 
-def process_presentation(input_pptx: Path, output_pptx: Path, ocr_lang: str, min_text_height: int):
-    translator = get_translator()
+def process_presentation(input_pptx: Path, output_pptx: Path, ocr_lang: str, min_text_height: int, provider: str = None):
+    translator = get_translator(provider)
     
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_dir_path = Path(temp_dir)
@@ -294,6 +256,7 @@ def main():
     parser.add_argument("-o", "--output", required=True, help="Output PPTX file")
     parser.add_argument("--lang", default="kor", help="Tesseract OCR language")
     parser.add_argument("--min-text-height", type=int, default=18)
+    parser.add_argument("--provider", default=None, help="LLM provider (e.g. ollama, office)")
     parser.add_argument("--verbose", action="store_true")
     
     args = parser.parse_args()
@@ -308,7 +271,7 @@ def main():
         
     out_path.parent.mkdir(parents=True, exist_ok=True)
     
-    process_presentation(in_path, out_path, args.lang, args.min_text_height)
+    process_presentation(in_path, out_path, args.lang, args.min_text_height, args.provider)
 
 if __name__ == "__main__":
     main()
