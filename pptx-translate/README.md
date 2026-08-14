@@ -30,6 +30,21 @@ pip install -r requirements.txt
 
 ## Usage
 
+### 1. Direct XML Translation (`xml_translate.py`) - Primary Tool
+
+This script directly translates Korean `.pptx` files into English `.pptx` files by unzipping the archive and manipulating the `<a:t>` tags. This perfectly preserves all fonts, styles, and layouts.
+
+Image text is extracted via Tesseract and appended to the slide's Speaker Notes in the format: `Image Text: [Korean] -> [English]`.
+
+```powershell
+# Translate a single file (creates a new translated .pptx)
+python xml_translate.py -i input.pptx -o output_english.pptx
+```
+
+### 2. Markdown Extraction (`extract.py`) - Secondary Tool
+
+Extract all slide text and embedded images into a clean Markdown layout.
+
 ```powershell
 # Extract a single file (outputs to ./extracted/report.md)
 python extract.py -i report.pptx
@@ -47,7 +62,7 @@ python extract.py -i slides.pptx --confidence 75
 python extract.py -i slides.pptx --verbose
 ```
 
-### All flags
+### `extract.py` Flags
 
 | Flag | Default | Description |
 |------|---------|-------------|
@@ -61,7 +76,7 @@ python extract.py -i slides.pptx --verbose
 
 ---
 
-## What gets extracted
+## What gets extracted (via `extract.py`)
 
 | Content | How |
 |---------|-----|
@@ -82,8 +97,8 @@ python extract.py -i slides.pptx --verbose
  
  ```
  pptx-translate/
+ ├── xml_translate.py        ← Direct XML translation CLI (Primary)
  ├── extract.py              ← Markdown extraction CLI
- ├── xml_translate.py        ← Direct XML translation CLI
  ├── requirements.txt
  ├── README.md
  ├── dev_log.md              ← full session history and design decisions
@@ -92,16 +107,3 @@ python extract.py -i slides.pptx --verbose
      ├── image_handler.py    ← Tesseract OCR
      └── pptx_handler.py     ← python-pptx traversal + orchestration
  ```
-
----
-
-## Direct XML Translation (`xml_translate.py`)
-
-A secondary script is included to directly translate Korean PPTX files into English PPTX files by unzipping the archive and manipulating the `<a:t>` tags. This perfectly preserves all fonts, styles, and layouts.
-
-Image text is extracted via Tesseract and appended to the Slide's Speaker Notes in the format: `Image Text: [Korean] -> [English]`. 
-
-```powershell
-# Direct XML translation (creates a new translated .pptx)
-python xml_translate.py -i input.pptx -o output_english.pptx
-```
