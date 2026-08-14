@@ -1,7 +1,7 @@
-# pptx-translate (PPTX to Markdown Extractor)
+# pptx-translate (Offline PPTX Translator & Extractor)
 
-Offline PowerPoint text and image extractor.  
-Extracts all slide text and embedded images into a clean Markdown layout. Uses local Tesseract OCR to optionally extract Korean text from embedded images.
+Offline PowerPoint text translator and Markdown extractor.  
+Translates Korean `.pptx` files to English by directly manipulating XML to preserve exact styling. Also includes a utility to extract all slide text and embedded images into a clean Markdown layout. Uses local Tesseract OCR to extract image text.
 
 ---
 

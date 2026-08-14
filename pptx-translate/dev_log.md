@@ -369,3 +369,10 @@ User reported that the Markdown extraction wasn't fitting their needs and wanted
 - `xml_translate.py` (New file)
 - `requirements.txt` (Added argostranslate back)
 - `README.md` (Updated docs)
+
+### Commit History (Session 6)
+
+| Commit | Description |
+|---|---|
+| `ce943de` | docs: update README and dev_log for extraction pivot |
+| `3fec477` | feat: add xml_translate.py for direct XML manipulation, update docs |
