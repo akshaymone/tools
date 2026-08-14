@@ -79,15 +79,29 @@ python extract.py -i slides.pptx --verbose
 ---
 
 ## Project layout
+ 
+ ```
+ pptx-translate/
+ ├── extract.py              ← Markdown extraction CLI
+ ├── xml_translate.py        ← Direct XML translation CLI
+ ├── requirements.txt
+ ├── README.md
+ ├── dev_log.md              ← full session history and design decisions
+ └── translator/
+     ├── __init__.py
+     ├── image_handler.py    ← Tesseract OCR
+     └── pptx_handler.py     ← python-pptx traversal + orchestration
+ ```
 
-```
-pptx-translate/
-├── extract.py              ← CLI entry point
-├── requirements.txt
-├── README.md
-├── dev_log.md              ← full session history and design decisions
-└── translator/
-    ├── __init__.py
-    ├── image_handler.py    ← Tesseract OCR
-    └── pptx_handler.py     ← python-pptx traversal + orchestration
+---
+
+## Direct XML Translation (`xml_translate.py`)
+
+A secondary script is included to directly translate Korean PPTX files into English PPTX files by unzipping the archive and manipulating the `<a:t>` tags. This perfectly preserves all fonts, styles, and layouts.
+
+Image text is extracted via Tesseract and appended to the Slide's Speaker Notes in the format: `Image Text: [Korean] -> [English]`. 
+
+```powershell
+# Direct XML translation (creates a new translated .pptx)
+python xml_translate.py -i input.pptx -o output_english.pptx
 ```

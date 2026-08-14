@@ -352,3 +352,20 @@ User reported that translation was producing explicit/garbage texts and opted to
 | `c0b346e` | refactor: simplify to MD text extraction (remove translation) |
 | `3e4fe05` | feat: extract and link images in markdown |
 
+---
+
+## Session 6 — 2026-08-14 (Conversation `Current`)
+
+### Context
+User reported that the Markdown extraction wasn't fitting their needs and wanted to return to a PPTX-to-PPTX approach but doing it at the raw XML level to prevent styling corruption that `python-pptx` might cause.
+
+### Design Decisions
+- **Hybrid XML Approach**: We use `python-pptx` initially *only* to generate an empty Speaker Notes slide for every slide (because manually wiring notes XML files and `_rels` is excessively complex and prone to corruption).
+- **Direct XML Manipulation**: After the notes are generated, we unzip the `.pptx`, read `ppt/slides/slide*.xml`, and directly translate text within the `<a:t>` tags. This perfectly preserves parent `<a:rPr>` and `<a:pPr>` styling attributes.
+- **Image Translation via Notes**: We run Tesseract on images in `ppt/media/` (mapped via slide `_rels`). We now inject both the original Korean text and the English translation into the speaker notes XML. This allows for side-by-side verification of Tesseract's accuracy vs translation accuracy.
+- **Bulletproof Offline Loading**: We brought back `argostranslate` and re-implemented the 3-step offline loading, ensuring it scans multiple cache directories before attempting a network connection.
+
+### Files Changed
+- `xml_translate.py` (New file)
+- `requirements.txt` (Added argostranslate back)
+- `README.md` (Updated docs)
