@@ -52,14 +52,37 @@ class TextEngine:
         return translation
 
     def _find_installed(self, at_translate) -> Optional[object]:
-        installed = at_translate.get_installed_languages()
-        from_lang = next((l for l in installed if l.code == self.FROM_CODE), None)
-        if from_lang is None:
+        """
+        Use get_translation_from_codes() — the stable public API in
+        argostranslate >= 1.x.  The older Language.translations attribute
+        was removed in newer releases.
+        """
+        try:
+            translation = at_translate.get_translation_from_codes(
+                self.FROM_CODE, self.TO_CODE
+            )
+            return translation  # returns None if not installed
+        except Exception as exc:
+            log.debug(f"get_translation_from_codes failed ({exc}), falling back.")
+
+        # Fallback: walk installed languages (older argostranslate < 1.9)
+        try:
+            installed = at_translate.get_installed_languages()
+            from_lang = next(
+                (l for l in installed if l.code == self.FROM_CODE), None
+            )
+            if from_lang is None:
+                return None
+            translations = getattr(from_lang, "translations", None)
+            if translations is None:
+                return None
+            return next(
+                (t for t in translations if t.to_lang.code == self.TO_CODE),
+                None,
+            )
+        except Exception as exc:
+            log.debug(f"Fallback language walk also failed: {exc}")
             return None
-        return next(
-            (t for t in from_lang.translations if t.to_lang.code == self.TO_CODE),
-            None,
-        )
 
     def _install_package(self) -> None:
         import argostranslate.package as at_pkg
