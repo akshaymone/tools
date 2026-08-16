@@ -76,7 +76,10 @@ def clean_text(text: str) -> str:
         return text
     # Keep only valid XML 1.0 characters
     import re
-    return re.sub(r'[^\x09\x0A\x0D\x20-\uD7FF\uE000-\uFFFD\U00010000-\U0010FFFF]', '', text)
+    cleaned = re.sub(r'[^\x09\x0A\x0D\x20-\uD7FF\uE000-\uFFFD\U00010000-\U0010FFFF]', '', text)
+    # PowerPoint <a:t> tags do NOT allow newlines, carriage returns or tabs.
+    # They must be replaced with spaces.
+    return cleaned.replace('\n', ' ').replace('\r', ' ').replace('\t', ' ')
 
 def translate_xml_file(xml_path: Path, translator) -> None:
     """Finds all <a:t> tags and translates their content in-place."""
