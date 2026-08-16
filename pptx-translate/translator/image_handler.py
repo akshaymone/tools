@@ -61,9 +61,14 @@ class ImageHandler:
         
         try:
             log.info(f"Running native Windows OCR batch on {images_dir}...")
-            subprocess.run(cmd, check=True, capture_output=True, text=True)
+            result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+            log.info(f"PowerShell STDOUT:\n{result.stdout}")
+            if result.stderr:
+                log.warning(f"PowerShell STDERR:\n{result.stderr}")
         except subprocess.CalledProcessError as e:
-            log.error(f"PowerShell OCR script failed: {e.stderr}")
+            log.error(f"PowerShell OCR script failed with code {e.returncode}")
+            log.error(f"PowerShell STDOUT:\n{e.stdout}")
+            log.error(f"PowerShell STDERR:\n{e.stderr}")
             return {}
         except FileNotFoundError:
             # If running on Linux or without powershell available
