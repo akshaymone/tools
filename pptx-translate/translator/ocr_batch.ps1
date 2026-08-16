@@ -21,6 +21,9 @@ Function Write-Log {
 
 Function Await-WinRt {
     param($AsyncOp, $ResultType)
+    if ($ResultType -is [string]) {
+        $ResultType = [type]($ResultType -replace '^\[|\]$', '')
+    }
     $asTask = $global:asTaskGeneric.MakeGenericMethod($ResultType)
     $netTask = $asTask.Invoke($null, @($AsyncOp))
     return $netTask.GetAwaiter().GetResult()
