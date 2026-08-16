@@ -1,7 +1,6 @@
 import argparse
 import logging
 import os
-import re
 import shutil
 import sys
 import tempfile
@@ -9,10 +8,10 @@ import zipfile
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
-import pytesseract
-from PIL import Image
 from pptx import Presentation
 from tqdm import tqdm
+
+from translator.image_handler import ImageHandler
 
 try:
     from dotenv import load_dotenv
@@ -71,68 +70,13 @@ class LLMTranslator:
 def get_translator(provider: str = None):
     return LLMTranslator(provider=provider)
 
-# --- Image OCR Helpers ---
-_HANGUL_RE = re.compile(r'[\uac00-\ud7a3\u1100-\u11ff\u3130-\u318f]')
-_MIN_HANGUL_CHARS = 5
-_MIN_KOREAN_RATIO = 0.40
-_MIN_SOURCE_LEN = 6
-
-def _korean_ratio(text: str) -> float:
-    if not text:
-        return 0.0
-    text_nospace = text.replace(" ", "")
-    if not text_nospace:
-        return 0.0
-    hangul_count = len(_HANGUL_RE.findall(text_nospace))
-    return hangul_count / len(text_nospace)
-
-def _is_korean_text(text: str) -> bool:
-    hangul_count = len(_HANGUL_RE.findall(text))
-    if hangul_count < _MIN_HANGUL_CHARS:
-        return False
-    if len(text.strip()) < _MIN_SOURCE_LEN:
-        return False
-    return _korean_ratio(text) >= _MIN_KOREAN_RATIO
-
-def extract_text_from_image(image_path: Path, lang: str = 'kor', min_height: int = 18) -> list[str]:
-    try:
-        img = Image.open(image_path)
-    except Exception as e:
-        log.warning(f"Could not open image {image_path}: {e}")
-        return []
-
-    try:
-        custom_config = r'--psm 11'
-        data = pytesseract.image_to_data(img, lang=lang, config=custom_config, output_type=pytesseract.Output.DICT)
-        
-        blocks = []
-        for i in range(len(data['text'])):
-            text = data['text'][i].strip()
-            height = data['height'][i]
-            conf = int(data['conf'][i])
-            
-            if conf >= 60 and height >= min_height and text:
-                blocks.append(text)
-                
-        grouped_text = " ".join(blocks)
-        
-        chunks = [c.strip() for c in grouped_text.split("  ") if c.strip()]
-        
-        valid_korean = []
-        seen = set()
-        for chunk in chunks:
-            if _is_korean_text(chunk) and chunk not in seen:
-                valid_korean.append(chunk)
-                seen.add(chunk)
-                
-        return valid_korean
-    except Exception as e:
-        log.warning(f"OCR failed on {image_path}: {e}")
-        return []
 
 # --- XML Processing ---
 def translate_xml_file(xml_path: Path, translator) -> None:
     """Finds all <a:t> tags and translates their content in-place."""
+    import re
+    _HANGUL_RE = re.compile(r'[\uac00-\ud7a3\u1100-\u11ff\u3130-\u318f]')
+    
     tree = ET.parse(xml_path)
     root = tree.getroot()
     changed = False
@@ -202,6 +146,14 @@ def process_presentation(input_pptx: Path, output_pptx: Path, ocr_lang: str, min
         media_dir = extract_dir / "ppt" / "media"
         rels_dir = slides_dir / "_rels"
         
+        # Run Batch OCR on extracted media first
+        ocr_results = {}
+        if media_dir.exists():
+            log.info("Running batch OCR on presentation media...")
+            ocr_lang_code = ocr_lang if ocr_lang != "kor" else "ko-KR"
+            image_handler = ImageHandler(ocr_lang=ocr_lang_code, min_text_height=min_text_height)
+            ocr_results = image_handler.process_batch(media_dir)
+        
         slide_files = list(slides_dir.glob("slide*.xml"))
         
         for slide_xml in tqdm(slide_files, desc="Translating Slides"):
@@ -230,7 +182,7 @@ def process_presentation(input_pptx: Path, output_pptx: Path, ocr_lang: str, min
             slide_ocr_texts = []
             for img_path in image_paths:
                 if img_path.exists() and img_path.suffix.lower() in ['.png', '.jpg', '.jpeg']:
-                    korean_texts = extract_text_from_image(img_path, lang=ocr_lang, min_height=min_text_height)
+                    korean_texts = ocr_results.get(img_path.name, [])
                     for kt in korean_texts:
                         translated = translator.translate(kt)
                         slide_ocr_texts.append(f"Image Text: {kt} -> {translated}")

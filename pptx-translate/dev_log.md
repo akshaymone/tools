@@ -458,3 +458,31 @@ Removed the unsupported `temperature=0.1` keyword argument from the `get_llm(pro
 | Commit | Description |
 |---|---|
 | (Pending) | fix: remove unsupported temperature kwarg from get_llm call in main.py |
+
+---
+
+## Session 10 — 2026-08-16 (Conversation `Current`)
+
+### Context
+User reported that `pytesseract` was still finicky/not working properly. We discussed switching to native PowerShell commands (using the `Windows.Media.Ocr` engine built into Windows 10/11) to perform the OCR tasks, eliminating the need to install Tesseract or download `.traineddata` files.
+
+### Design Decisions
+- **Native Windows OCR**: Decided to utilize the highly accurate `Windows.Media.Ocr.OcrEngine` which is native to Windows 10/11.
+- **PowerShell Batching**: Spawning `powershell.exe` per image adds a ~0.5s overhead per call. To fix this, we wrote `ocr_batch.ps1` to take a whole directory of images, run OCR on all of them in a single PowerShell process, and write the output (including bounding box heights) to a single `ocr_results.json`.
+- **Placeholder Pattern**: Instead of rewriting the main `pptx_handler.py` traversal logic, we inject a placeholder `[[OCR_PLACEHOLDER:filename]]` where the image text should go, run the batch OCR once, and then replace all placeholders.
+- **Main.py Refactor**: Integrated the new `ImageHandler.process_batch()` directly into `main.py`. The `media/` folder extracted from the PPTX is perfectly suited for this. We run OCR across all media upfront, then inject the text and its LLM translation into the speaker notes XML as before.
+- **Dependencies Cleaned**: Completely removed `pytesseract`, `Pillow`, and `pandas` from `requirements.txt`.
+
+### Files Changed
+- `translator/ocr_batch.ps1` (New script for batch processing)
+- `translator/image_handler.py` (Rewritten to call PowerShell and parse JSON)
+- `translator/pptx_handler.py` (Updated to use batch and placeholder injection)
+- `translator/main.py` (Removed Tesseract, integrated `ImageHandler.process_batch`)
+- `requirements.txt` (Removed heavy OCR dependencies)
+- `README.md` (Updated docs to reflect Windows OCR)
+
+### Commit History (Session 10)
+
+| Commit | Description |
+|---|---|
+| (Pending) | feat: replace tesseract with batched native windows OCR via powershell |

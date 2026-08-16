@@ -13,7 +13,7 @@ class PPTXHandler:
         self,
         skip_images: bool = False,
         confidence: int = 60,
-        ocr_lang: str = "kor",
+        ocr_lang: str = "ko-KR",
         min_text_height: int = _MIN_TEXT_HEIGHT_PX,
     ) -> None:
         self.min_text_height = min_text_height
@@ -26,6 +26,7 @@ class PPTXHandler:
             self.image_handler = ImageHandler(
                 confidence=confidence,
                 ocr_lang=ocr_lang,
+                min_text_height=self.min_text_height,
             )
 
     def extract_file(self, input_path: Path, output_path: Path) -> None:
@@ -71,6 +72,25 @@ class PPTXHandler:
                 md_lines.extend(image_texts)
 
             md_lines.append("\n---\n")
+
+        # Run Batch OCR if not skipping images
+        if not self.skip_images and self.image_handler is not None and images_dir.exists():
+            ocr_results = self.image_handler.process_batch(images_dir)
+            
+            # Replace placeholders with actual text
+            final_md_lines = []
+            for line in md_lines:
+                if line.startswith("[[OCR_PLACEHOLDER:"):
+                    img_name = line.replace("[[OCR_PLACEHOLDER:", "").replace("]]", "")
+                    texts = ocr_results.get(img_name, [])
+                    if texts:
+                        for t in texts:
+                            final_md_lines.append("- " + t.replace("\n", " "))
+                    else:
+                        final_md_lines.append("*(No significant Korean text found)*")
+                else:
+                    final_md_lines.append(line)
+            md_lines = final_md_lines
 
         output_path.write_text("\n".join(md_lines), encoding="utf-8")
 
@@ -139,13 +159,6 @@ class PPTXHandler:
         image_texts.append(f"![Slide {slide_idx} Image {pic_idx}]({rel_path})")
 
         if self.image_handler is not None:
-            texts = self.image_handler.extract_text(
-                image.blob,
-                min_height=self.min_text_height,
-            )
-            if texts:
-                image_texts.append("\n**Extracted Korean Text:**")
-                for t in texts:
-                    image_texts.append("- " + t.replace("\n", " "))
-            else:
-                image_texts.append("\n*(No significant Korean text found)*")
+            image_texts.append("\n**Extracted Korean Text:**")
+            # Insert a placeholder that will be resolved during batch OCR processing
+            image_texts.append(f"[[OCR_PLACEHOLDER:{img_name}]]")

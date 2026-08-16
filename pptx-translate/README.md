@@ -1,7 +1,7 @@
 # translator (Korean PPTX Translator)
 
 Offline PowerPoint text translator and Markdown extractor.  
-Translates Korean `.pptx` files to English by directly manipulating XML to preserve exact styling. Image text is extracted via local Tesseract OCR.
+Translates Korean `.pptx` files to English by directly manipulating XML to preserve exact styling. Image text is extracted via **native Windows OCR** (no external tools required).
 Now powered by the `agents` package LLM models (supports both local Ollama and the Office API).
 
 ---
@@ -11,8 +11,8 @@ Now powered by the `agents` package LLM models (supports both local Ollama and t
 | Tool | Notes |
 |------|-------|
 | Python 3.10+ | |
-| Tesseract OCR | Must be on `PATH` |
-| Korean Tesseract data | `kor.traineddata` must be in your `tessdata` folder |
+| Windows 10/11 | Required for native Windows Media OCR API |
+| Korean Language Pack | Must be installed in Windows Settings for Korean OCR |
 
 ---
 
@@ -22,16 +22,12 @@ The tool is packaged as `translator` and relies on the `agents` package being in
 
 ```powershell
 # 1. Install directly from Git
-pip install "git+https://github.com/akshaymone/agents.git#subdirectory=tools/pptx-translate"
+pip install "git+https://github.com/akshaymone/tools.git#subdirectory=pptx-translate"
 
 # 2. Configure Environment
 # Copy the example config and adjust as needed
 copy .env.example .env
 ```
-
-> **Missing Korean tessdata?**  
-> Download [`kor.traineddata`](https://github.com/tesseract-ocr/tessdata/raw/main/kor.traineddata)  
-> and place it in your Tesseract `tessdata/` folder (e.g. `C:\Program Files\Tesseract-OCR\tessdata\`).
 
 ---
 
@@ -41,7 +37,7 @@ copy .env.example .env
 
 This command translates Korean `.pptx` files into English `.pptx` files by unzipping the archive and manipulating the `<a:t>` tags. This perfectly preserves all fonts, styles, and layouts.
 
-It leverages the LLM setup from the `agents` package.
+It leverages the LLM setup from the `agents` package. Images are batched and processed using a PowerShell background script calling native Windows OCR. Both the Korean text and its translation are injected into the speaker notes.
 
 ```powershell
 # Translate using the default provider from your .env
@@ -76,7 +72,10 @@ python extract.py -i slides.pptx --skip-images
  ├── pyproject.toml          ← Packaging and dependencies
  ├── .env.example            ← Configuration template
  ├── translator/             ← Main package source
- │   └── main.py             ← Direct XML translation CLI (`translator` command)
+ │   ├── main.py             ← Direct XML translation CLI (`translator` command)
+ │   ├── image_handler.py    ← Orchestrates PowerShell OCR batching
+ │   ├── pptx_handler.py     ← Handles markdown extraction
+ │   └── ocr_batch.ps1       ← Native Windows OCR logic in PowerShell
  ├── extract.py              ← Markdown extraction CLI
  ├── README.md
  └── dev_log.md              ← Full session history and design decisions
