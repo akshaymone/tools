@@ -19,26 +19,10 @@ Function Write-Log {
     Add-Content -Path $logFile -Value $msg
 }
 
-Function Await-WinRt {
-    param($AsyncOp)
-    # AsyncStatus 0 = Started
-    while ($AsyncOp.Status -eq 0) {
-        Start-Sleep -Milliseconds 10
-    }
-    # AsyncStatus 1 = Completed
-    if ($AsyncOp.Status -eq 1) {
-        return $AsyncOp.GetResults()
-    }
-    # AsyncStatus 3 = Error
-    if ($AsyncOp.Status -eq 3) {
-        throw "WinRT Async Operation Failed with ErrorCode: $($AsyncOp.ErrorCode)"
-    }
-    throw "WinRT Async Operation Cancelled or Unknown Status: $($AsyncOp.Status)"
-}
-
 Write-Log "Starting OCR batch process for directory: $ImagesDir"
 
-# Load WinRT types
+# Load WinRT types and Extension Methods for Async
+Add-Type -AssemblyName System.Runtime.WindowsRuntime
 [Windows.Media.Ocr.OcrEngine, Windows.Foundation, ContentType = WindowsRuntime] | Out-Null
 [Windows.Graphics.Imaging.BitmapDecoder, Windows.Foundation, ContentType = WindowsRuntime] | Out-Null
 [Windows.Storage.StorageFile, Windows.Foundation, ContentType = WindowsRuntime] | Out-Null
@@ -58,21 +42,12 @@ $images = Get-ChildItem -Path $ImagesDir -File -Include *.png,*.jpg,*.jpeg -Recu
 foreach ($img in $images) {
     try {
         Write-Log "Processing: $($img.Name)"
+        $file = [Windows.Storage.StorageFile]::GetFileFromPathAsync($img.FullName).GetAwaiter().GetResult()
+        $stream = $file.OpenAsync([Windows.Storage.FileAccessMode]::Read).GetAwaiter().GetResult()
+        $decoder = [Windows.Graphics.Imaging.BitmapDecoder]::CreateAsync($stream).GetAwaiter().GetResult()
+        $softwareBitmap = $decoder.GetSoftwareBitmapAsync().GetAwaiter().GetResult()
         
-        $op1 = [Windows.Storage.StorageFile]::GetFileFromPathAsync($img.FullName)
-        $file = Await-WinRt $op1
-        
-        $op2 = $file.OpenAsync([Windows.Storage.FileAccessMode]::Read)
-        $stream = Await-WinRt $op2
-        
-        $op3 = [Windows.Graphics.Imaging.BitmapDecoder]::CreateAsync($stream)
-        $decoder = Await-WinRt $op3
-        
-        $op4 = $decoder.GetSoftwareBitmapAsync()
-        $softwareBitmap = Await-WinRt $op4
-        
-        $op5 = $engine.RecognizeAsync($softwareBitmap)
-        $ocrResult = Await-WinRt $op5
+        $ocrResult = $engine.RecognizeAsync($softwareBitmap).GetAwaiter().GetResult()
         
         $lines = @()
         if ($null -ne $ocrResult -and $null -ne $ocrResult.Lines) {
