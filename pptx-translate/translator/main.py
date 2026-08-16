@@ -200,8 +200,11 @@ def process_presentation(input_pptx: Path, output_pptx: Path, ocr_lang: str, min
             for img_path in image_paths:
                 if img_path.exists() and img_path.suffix.lower() in ['.png', '.jpg', '.jpeg']:
                     korean_texts = ocr_results.get(img_path.name, [])
+                    if korean_texts:
+                        log.info(f"Found {len(korean_texts)} OCR text blocks in {img_path.name}")
                     for kt in korean_texts:
                         translated = translator.translate(kt)
+                        log.info(f"[OCR] {img_path.name} | Original: {kt} | Translated: {translated}")
                         slide_ocr_texts.append(f"Image Text: {kt} -> {translated}")
             
             if slide_ocr_texts and notes_xml_path and notes_xml_path.exists():
