@@ -71,7 +71,13 @@ def get_translator(provider: str = None):
     return LLMTranslator(provider=provider)
 
 
-# --- XML Processing ---
+def clean_text(text: str) -> str:
+    if not text:
+        return text
+    # Keep only valid XML 1.0 characters
+    import re
+    return re.sub(r'[^\x09\x0A\x0D\x20-\uD7FF\uE000-\uFFFD\U00010000-\U0010FFFF]', '', text)
+
 def translate_xml_file(xml_path: Path, translator) -> None:
     """Finds all <a:t> tags and translates their content in-place."""
     import re
@@ -85,7 +91,7 @@ def translate_xml_file(xml_path: Path, translator) -> None:
         text = t_tag.text
         if text and _HANGUL_RE.search(text):
             translated = translator.translate(text)
-            t_tag.text = translated
+            t_tag.text = clean_text(translated)
             changed = True
 
     if changed:
@@ -124,10 +130,11 @@ def append_to_notes_xml(notes_xml_path: Path, new_texts: list):
 
     if notes_txBody is not None:
         for text_line in new_texts:
+            clean_line = clean_text(text_line)
             p = ET.Element(f'{{{NS["a"]}}}p')
             r = ET.SubElement(p, f'{{{NS["a"]}}}r')
             t = ET.SubElement(r, f'{{{NS["a"]}}}t')
-            t.text = text_line
+            t.text = clean_line
             notes_txBody.append(p)
         tree.write(notes_xml_path, encoding='utf-8', xml_declaration=True)
 

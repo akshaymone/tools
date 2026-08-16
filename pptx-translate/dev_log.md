@@ -564,3 +564,27 @@ Updated `append_to_notes_xml` in `translator/main.py` to:
 | Commit | Description |
 |---|---|
 | (Pending) | fix: fix PPTX corruption caused by injecting newline characters into speaker notes XML tags |
+
+---
+
+## Session 14 — 2026-08-16 (Conversation `Current`)
+
+### Bug: PowerPoint file corruption from invalid XML control characters
+
+**Error:**
+After translation, opening the output `.pptx` file in PowerPoint still triggers a "PowerPoint found a problem with content in the file" prompt. The repair process deletes the speaker notes entirely, and potentially some slides.
+
+**Root cause:**
+The LLM output for translated text occasionally included invisible control characters (e.g., `\x00`, `\x08`, `\x0b`) which are strictly prohibited in the XML 1.0 specification. Even though Python's `xml.etree.ElementTree` automatically escapes standard characters like `<` or `&`, it does NOT strip invalid control characters. When PowerPoint encounters these illegal characters in the XML (`<a:t>`), it marks the file as corrupted and deletes the affected slides/notes during repair.
+
+**Fix:**
+Implemented a `clean_text(text)` helper function in `translator/main.py` that uses regex `r'[^\x09\x0A\x0D\x20-\uD7FF\uE000-\uFFFD\U00010000-\U0010FFFF]'` to strip all invalid XML 1.0 control characters from the translated text before it is injected into the slide or speaker notes XML.
+
+**Files Changed:**
+- `translator/main.py`
+
+### Commit History (Session 14)
+
+| Commit | Description |
+|---|---|
+| (Pending) | fix: strip invalid XML control characters from LLM translations to prevent PPTX corruption |
