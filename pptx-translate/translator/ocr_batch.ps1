@@ -65,19 +65,19 @@ foreach ($img in $images) {
     try {
         Write-Log "Processing: $($img.Name)"
         $op1 = [Windows.Storage.StorageFile]::GetFileFromPathAsync($img.FullName)
-        $file = Await-WinRt $op1 [Windows.Storage.StorageFile]
+        $file = Await-WinRt $op1 ([Windows.Storage.StorageFile])
         
         $op2 = $file.OpenAsync([Windows.Storage.FileAccessMode]::Read)
-        $stream = Await-WinRt $op2 [Windows.Storage.Streams.IRandomAccessStream]
+        $stream = Await-WinRt $op2 ([Windows.Storage.Streams.IRandomAccessStream])
         
         $op3 = [Windows.Graphics.Imaging.BitmapDecoder]::CreateAsync($stream)
-        $decoder = Await-WinRt $op3 [Windows.Graphics.Imaging.BitmapDecoder]
+        $decoder = Await-WinRt $op3 ([Windows.Graphics.Imaging.BitmapDecoder])
         
         $op4 = $decoder.GetSoftwareBitmapAsync()
-        $softwareBitmap = Await-WinRt $op4 [Windows.Graphics.Imaging.SoftwareBitmap]
+        $softwareBitmap = Await-WinRt $op4 ([Windows.Graphics.Imaging.SoftwareBitmap])
         
         $op5 = $engine.RecognizeAsync($softwareBitmap)
-        $ocrResult = Await-WinRt $op5 [Windows.Media.Ocr.OcrResult]
+        $ocrResult = Await-WinRt $op5 ([Windows.Media.Ocr.OcrResult])
         
         $lines = @()
         if ($null -ne $ocrResult -and $null -ne $ocrResult.Lines) {
