@@ -813,4 +813,4 @@ Replaced the 3-step process (python-pptx load → save → unzip) with:
 
 | Commit | Description |
 |---|---|
-| (Pending) | fix: eliminate python-pptx save — unzip original directly and create notes via string templates |
+| `40c9e82` | fix: eliminate python-pptx save — unzip original directly and create notes via string templates |
