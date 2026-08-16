@@ -76,7 +76,7 @@ class ImageHandler:
             return {}
             
         try:
-            with open(json_file, "r", encoding="utf-8") as f:
+            with open(json_file, "r", encoding="utf-8-sig") as f:
                 raw_results = json.load(f)
         except Exception as e:
             log.error(f"Failed to read OCR results: {e}")
