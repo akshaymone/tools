@@ -110,27 +110,37 @@ def translate_xml_file(xml_path: Path, translator) -> None:
 
 def append_to_notes_xml(notes_xml_path: Path, new_texts: list):
     """Appends new text paragraphs to the speaker notes XML."""
+    import re
     import xml.sax.saxutils as saxutils
-    
+
     content = notes_xml_path.read_text(encoding='utf-8')
-    
-    # Find the body placeholder to locate the correct txBody
-    body_ph_idx = content.find('<p:ph type="body"')
-    if body_ph_idx == -1:
-        # Fallback to the beginning to just find the first txBody
-        body_ph_idx = 0
-        
-    # Find the end of the txBody that follows this placeholder
-    tx_body_end_idx = content.find('</p:txBody>', body_ph_idx)
+
+    # Find the body placeholder <p:ph type="body".../>
+    # We need the </p:txBody> that closes the *same* <p:sp> element.
+    # Strategy: find the closing tag of the <p:ph .../> element, then search
+    # forward for </p:txBody> from there — this always lands inside the
+    # correct shape's txBody and never in the title shape above it.
+    body_ph_match = re.search(r'<p:ph\s[^>]*type=["\']body["\']', content)
+    if body_ph_match:
+        # The placeholder tag may be self-closing (/>) or have a child element.
+        # Either way, find the close of the tag token first.
+        tag_close = content.find('>', body_ph_match.start())
+        search_from = tag_close if tag_close != -1 else body_ph_match.end()
+    else:
+        # Fallback: use the last </p:txBody> in the document (notes body is last)
+        search_from = 0
+
+    tx_body_end_idx = content.find('</p:txBody>', search_from)
     if tx_body_end_idx == -1:
+        log.warning(f"Could not find </p:txBody> in {notes_xml_path.name}, skipping notes append.")
         return
-        
+
     new_xml = ""
     for text_line in new_texts:
         clean_line = clean_text(text_line)
         escaped_line = saxutils.escape(clean_line)
         new_xml += f'<a:p><a:r><a:t>{escaped_line}</a:t></a:r></a:p>'
-        
+
     new_content = content[:tx_body_end_idx] + new_xml + content[tx_body_end_idx:]
     notes_xml_path.write_text(new_content, encoding='utf-8')
 
@@ -218,13 +228,25 @@ def process_presentation(input_pptx: Path, output_pptx: Path, ocr_lang: str, min
             if slide_ocr_texts and notes_xml_path and notes_xml_path.exists():
                 append_to_notes_xml(notes_xml_path, slide_ocr_texts)
 
+        # Step 5 (pre-check): Validate all XMLs before zipping to catch corruption early
+        log.info("Validating XML files before zip...")
+        import xml.etree.ElementTree as _ET
+        for xml_check in extract_dir.rglob("*.xml"):
+            try:
+                _ET.parse(xml_check)
+            except _ET.ParseError as exc:
+                log.warning(f"[XML INVALID] {xml_check.relative_to(extract_dir).as_posix()} — {exc}")
+
         # Step 5: Zip it back up
         log.info("Re-zipping presentation...")
         with zipfile.ZipFile(output_pptx, 'w', zipfile.ZIP_DEFLATED) as zip_out:
             for root, _, files in os.walk(extract_dir):
-                for file in files:
+                for file in sorted(files):  # sorted for reproducibility
                     file_path = Path(root) / file
-                    arcname = file_path.relative_to(extract_dir)
+                    # PPTX is a ZIP — ZIP spec requires forward-slash separators.
+                    # Path.relative_to() on Windows returns backslashes which
+                    # break PowerPoint's part-resolution and trigger the repair prompt.
+                    arcname = file_path.relative_to(extract_dir).as_posix()
                     zip_out.write(file_path, arcname)
 
     log.info(f"Successfully created: {output_pptx}")

@@ -737,3 +737,40 @@ translator -i input.pptx -o output.pptx --min-text-height 18
 | `6262338` | fix: cast ResultType from string to type to fix MakeGenericMethod error |
 | `f25545e` | fix: wrap type args in () so PowerShell evaluates them as Type objects |
 | `8c8356a` | fix(v8): pre-build typed AsTask methods upfront — final working solution |
+
+---
+
+## Session 17 — 2026-08-16 (Conversation `Current`)
+
+### Bug: PowerPoint repair prompt on every output file
+
+**User report:** Opening the translated `.pptx` triggers PowerPoint's "repair" prompt on every run. Content is removed after repair.
+
+**Root cause analysis — two independent bugs found:**
+
+#### Bug 1: `append_to_notes_xml` injected text into the wrong `</p:txBody>`
+
+The old implementation searched for `<p:ph type="body"` to locate the body text shape, then called `content.find('</p:txBody>', body_ph_idx)`. However, a notes slide XML has **two shapes** — a title shape and a body shape. The title shape's `<p:txBody>` **always comes first** in the XML. Because the body placeholder `<p:ph type="body"` is declared inside the body shape's `<p:sp>`, but `content.find('</p:txBody>', body_ph_idx)` searched *from the placeholder's character position*, which is **inside** the body `<p:sp>` but *after* the title's `</p:txBody>` — this accidentally targeted the correct one in some layouts, but failed on others where the body `<p:sp>` came first in the XML.
+
+The real failure mode: if the `<p:ph type="body"` attribute used double-quotes vs single-quotes, or had attributes in different order (e.g. `<p:ph idx="1" type="body"/>`), the `content.find` missed entirely and fell back to `search_from = 0`, injecting paragraphs after the **title shape's** `</p:txBody>` — producing XML like `</p:txBody><a:p>...` at the wrong nesting level, which is a schema violation.
+
+**Fix:** Switched to a regex search `re.search(r'<p:ph\s[^>]*type=["\']body["\']', content)` that handles any attribute ordering. Then searches for `>` from the match start to find the end of the placeholder tag, and uses that as `search_from` for `</p:txBody>`. This guarantees we always find the `</p:txBody>` of the **same** `<p:sp>` that contains the body placeholder.
+
+#### Bug 2: ZIP arcnames used backslashes on Windows
+
+`Path.relative_to(extract_dir)` on Windows returns backslash-separated paths (e.g. `ppt\slides\slide1.xml`). The ZIP specification requires **forward slashes** as path separators. When PowerPoint opens a ZIP with backslash paths, it cannot resolve part relationships → triggers the repair prompt and deletes slides/notes.
+
+**Fix:** Changed `arcname = file_path.relative_to(extract_dir)` → `arcname = file_path.relative_to(extract_dir).as_posix()` to always produce forward-slash paths regardless of OS.
+
+#### Bonus: Pre-zip XML validation
+
+Added a validation pass before zipping that runs `ElementTree.parse()` on every `.xml` file in the extracted directory. Any malformed XML is logged as `[XML INVALID] <path> — <error>` so corruption is surfaced immediately rather than discovered only after opening the file in PowerPoint.
+
+**Files changed:**
+- `translator/main.py` — fixed `append_to_notes_xml` regex targeting; fixed zip `arcname` to use `.as_posix()`; added pre-zip XML validation loop
+
+### Commit History (Session 17)
+
+| Commit | Description |
+|---|---|
+| (Pending) | fix: correct notes XML body targeting with regex; fix zip arcnames to use forward slashes |
