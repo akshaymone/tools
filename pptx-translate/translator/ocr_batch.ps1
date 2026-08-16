@@ -28,21 +28,32 @@ Function Await-WinRt {
 Write-Log "Starting OCR batch process for directory: $ImagesDir"
 
 # Load WinRT types and compile C# waiter
-Add-Type -AssemblyName System.Runtime.WindowsRuntime
 $csharpCode = @"
 using System;
 using System.Threading;
 using System.Threading.Tasks;
-using Windows.Foundation;
+using System.Runtime.InteropServices;
+
+[ComImport]
+[Guid("00000036-0000-0000-C000-000000000046")]
+[InterfaceType(ComInterfaceType.InterfaceIsIInspectable)]
+public interface IAsyncInfo {
+    uint Id { get; }
+    int Status { get; }
+    int ErrorCode { get; }
+    void Cancel();
+    void Close();
+}
 
 public class WinRtWaiter {
     public static void Wait(object op) {
         var task = Task.Run(() => {
             var info = (IAsyncInfo)op;
-            while (info.Status == AsyncStatus.Started) {
+            // 0 = Started, 1 = Completed, 2 = Canceled, 3 = Error
+            while (info.Status == 0) {
                 Thread.Sleep(10);
             }
-            if (info.Status != AsyncStatus.Completed) {
+            if (info.Status != 1) {
                 throw new Exception("WinRT operation failed with status: " + info.Status);
             }
         });
@@ -52,7 +63,7 @@ public class WinRtWaiter {
     }
 }
 "@
-Add-Type -TypeDefinition $csharpCode -ReferencedAssemblies "System.Runtime.WindowsRuntime"
+Add-Type -TypeDefinition $csharpCode
 
 [Windows.Media.Ocr.OcrEngine, Windows.Foundation, ContentType = WindowsRuntime] | Out-Null
 [Windows.Graphics.Imaging.BitmapDecoder, Windows.Foundation, ContentType = WindowsRuntime] | Out-Null
