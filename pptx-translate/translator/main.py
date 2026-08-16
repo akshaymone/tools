@@ -84,62 +84,55 @@ def clean_text(text: str) -> str:
 def translate_xml_file(xml_path: Path, translator) -> None:
     """Finds all <a:t> tags and translates their content in-place."""
     import re
+    import xml.sax.saxutils as saxutils
+    
     _HANGUL_RE = re.compile(r'[\uac00-\ud7a3\u1100-\u11ff\u3130-\u318f]')
     
-    tree = ET.parse(xml_path)
-    root = tree.getroot()
-    changed = False
-
-    for t_tag in root.findall('.//a:t', NS):
-        text = t_tag.text
-        if text and _HANGUL_RE.search(text):
-            translated = translator.translate(text)
-            t_tag.text = clean_text(translated)
-            changed = True
-
-    if changed:
-        tree.write(xml_path, encoding='utf-8', xml_declaration=True)
+    content = xml_path.read_text(encoding='utf-8')
+    
+    def replacer(match):
+        prefix = match.group(1)
+        text = match.group(2)
+        suffix = match.group(3)
+        
+        unescaped = saxutils.unescape(text)
+        if unescaped and _HANGUL_RE.search(unescaped):
+            translated = translator.translate(unescaped)
+            cleaned = clean_text(translated)
+            escaped = saxutils.escape(cleaned)
+            return f"{prefix}{escaped}{suffix}"
+        return match.group(0)
+        
+    new_content = re.sub(r'(<a:t[^>]*>)(.*?)(</a:t>)', replacer, content)
+    
+    if new_content != content:
+        xml_path.write_text(new_content, encoding='utf-8')
 
 def append_to_notes_xml(notes_xml_path: Path, new_texts: list):
     """Appends new text paragraphs to the speaker notes XML."""
-    tree = ET.parse(notes_xml_path)
-    root = tree.getroot()
+    import xml.sax.saxutils as saxutils
     
-    spTree = root.find('.//p:spTree', NS)
-    if spTree is None:
+    content = notes_xml_path.read_text(encoding='utf-8')
+    
+    # Find the body placeholder to locate the correct txBody
+    body_ph_idx = content.find('<p:ph type="body"')
+    if body_ph_idx == -1:
+        # Fallback to the beginning to just find the first txBody
+        body_ph_idx = 0
+        
+    # Find the end of the txBody that follows this placeholder
+    tx_body_end_idx = content.find('</p:txBody>', body_ph_idx)
+    if tx_body_end_idx == -1:
         return
         
-    notes_txBody = None
-    # Find the shape that actually holds the notes body
-    for sp in spTree.findall('./p:sp', NS):
-        nvSpPr = sp.find('./p:nvSpPr', NS)
-        if nvSpPr is not None:
-            ph = nvSpPr.find('.//p:ph', NS)
-            if ph is not None and ph.get('type') == 'body':
-                txBody = sp.find('./p:txBody', NS)
-                if txBody is not None:
-                    notes_txBody = txBody
-                    break
-
-    # Fallback to the first available txBody if specific placeholder not found
-    if notes_txBody is None:
-        for sp in spTree.findall('./p:sp', NS):
-            nvSpPr = sp.find('./p:nvSpPr', NS)
-            if nvSpPr is not None:
-                txBody = sp.find('./p:txBody', NS)
-                if txBody is not None:
-                    notes_txBody = txBody
-                    break
-
-    if notes_txBody is not None:
-        for text_line in new_texts:
-            clean_line = clean_text(text_line)
-            p = ET.Element(f'{{{NS["a"]}}}p')
-            r = ET.SubElement(p, f'{{{NS["a"]}}}r')
-            t = ET.SubElement(r, f'{{{NS["a"]}}}t')
-            t.text = clean_line
-            notes_txBody.append(p)
-        tree.write(notes_xml_path, encoding='utf-8', xml_declaration=True)
+    new_xml = ""
+    for text_line in new_texts:
+        clean_line = clean_text(text_line)
+        escaped_line = saxutils.escape(clean_line)
+        new_xml += f'<a:p><a:r><a:t>{escaped_line}</a:t></a:r></a:p>'
+        
+    new_content = content[:tx_body_end_idx] + new_xml + content[tx_body_end_idx:]
+    notes_xml_path.write_text(new_content, encoding='utf-8')
 
 
 def process_presentation(input_pptx: Path, output_pptx: Path, ocr_lang: str, min_text_height: int, provider: str = None):
