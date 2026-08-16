@@ -32,17 +32,23 @@ Add-Type -AssemblyName System.Runtime.WindowsRuntime
 $csharpCode = @"
 using System;
 using System.Threading;
+using System.Threading.Tasks;
 using Windows.Foundation;
 
 public class WinRtWaiter {
     public static void Wait(object op) {
-        var info = (IAsyncInfo)op;
-        while (info.Status == AsyncStatus.Started) {
-            Thread.Sleep(10);
-        }
-        if (info.Status != AsyncStatus.Completed) {
-            throw new Exception("WinRT operation failed with status: " + info.Status);
-        }
+        var task = Task.Run(() => {
+            var info = (IAsyncInfo)op;
+            while (info.Status == AsyncStatus.Started) {
+                Thread.Sleep(10);
+            }
+            if (info.Status != AsyncStatus.Completed) {
+                throw new Exception("WinRT operation failed with status: " + info.Status);
+            }
+        });
+        
+        // GetAwaiter().GetResult() safely pumps COM STA messages, preventing deadlocks
+        task.GetAwaiter().GetResult();
     }
 }
 "@
