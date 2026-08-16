@@ -95,19 +95,34 @@ class ImageHandler:
                 
                 if not text:
                     continue
+                    
+                log.info(f"[{img_name}] Raw OCR text (height={height}): {text}")
+                
                 if height < self.min_text_height:
+                    log.info(f"  -> Dropped: height {height} < min {self.min_text_height}")
                     continue
                 if not _is_korean_text(text):
+                    log.info("  -> Dropped: Not enough Korean characters")
                     continue
                     
                 cleaned = _clean_ocr_text(text)
-                if not cleaned or len(cleaned) < _MIN_SOURCE_LEN or not _is_korean_text(cleaned):
+                if not cleaned:
+                    log.info("  -> Dropped: Cleaned text is empty")
+                    continue
+                if len(cleaned) < _MIN_SOURCE_LEN:
+                    log.info(f"  -> Dropped: Cleaned length {len(cleaned)} < min {_MIN_SOURCE_LEN}")
+                    continue
+                if not _is_korean_text(cleaned):
+                    log.info("  -> Dropped: Cleaned text has not enough Korean characters")
                     continue
                     
                 if cleaned in seen_raw:
+                    log.info("  -> Dropped: Duplicate text")
                     continue
+                    
                 seen_raw.add(cleaned)
                 valid_lines.append(cleaned)
+                log.info(f"  -> Kept for translation: {cleaned}")
                 
             results[img_name] = valid_lines
             
