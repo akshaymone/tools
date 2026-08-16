@@ -42,8 +42,11 @@ class ImageHandler:
         self.ocr_lang = ocr_lang if ocr_lang != "kor" else "ko-KR"
         self.min_text_height = min_text_height
 
-    def process_batch(self, images_dir: Path) -> dict[str, list[str]]:
-        log_dir = images_dir.parent / f"{images_dir.name}_logs"
+    def process_batch(self, images_dir: Path, log_dir: Path = None) -> dict[str, list[str]]:
+        # log_dir MUST be outside the extracted PPTX directory — anything written
+        # inside extract_dir ends up in the re-zipped PPTX and corrupts it.
+        if log_dir is None:
+            log_dir = images_dir.parent.parent.parent / "ocr_logs"  # outside extract_dir
         log_dir.mkdir(parents=True, exist_ok=True)
         
         script_path = Path(__file__).parent / "ocr_batch.ps1"

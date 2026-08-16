@@ -348,12 +348,14 @@ def process_presentation(
             log.info("Running batch OCR on presentation media...")
             ocr_lang_code = ocr_lang if ocr_lang != 'kor' else 'ko-KR'
             image_handler = ImageHandler(ocr_lang=ocr_lang_code, min_text_height=min_text_height)
-            ocr_results = image_handler.process_batch(media_dir)
-            ocr_log_dir = media_dir.parent / f'{media_dir.name}_logs'
+            # IMPORTANT: log_dir must be OUTSIDE extract_dir — files inside
+            # extract_dir get packed into the ZIP and corrupt the PPTX.
+            ocr_log_dir = Path(temp_dir) / 'ocr_logs'
+            ocr_results = image_handler.process_batch(media_dir, log_dir=ocr_log_dir)
             if ocr_log_dir.exists():
                 dest = output_pptx.parent / f'{output_pptx.stem}_ocr_logs'
                 log.info(f"Saving OCR logs to {dest}")
-                shutil.copytree(ocr_log_dir, dest, dirs_exist_ok=True)
+                shutil.copytree(str(ocr_log_dir), str(dest), dirs_exist_ok=True)
 
         # Step 4: Translate + inject OCR
         if skip_translate:
