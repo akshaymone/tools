@@ -590,3 +590,55 @@ Implemented a `clean_text(text)` helper function in `translator/main.py` that:
 | Commit | Description |
 |---|---|
 | (Pending) | fix: strip invalid XML control characters from LLM translations to prevent PPTX corruption |
+
+---
+
+## Session 15 — 2026-08-16 (Conversation `Current`)
+
+### Bug: PowerPoint file corruption from ElementTree Namespace Stripping
+
+**Error:**
+Despite fixing the newline and control characters in Session 14, PowerPoint continued to prompt for repair and delete slides.
+
+**Root cause:**
+Python's `xml.etree.ElementTree`, when parsing and writing XML, strips out XML namespace declarations (`xmlns:p14="..."`) if they are not explicitly used as tag prefixes in the document. PowerPoint OpenXML heavily relies on these namespaces being declared because they are referenced as *string values* inside attributes like `mc:Ignorable="p14"`. Because `ElementTree` didn't recognize `"p14"` as a namespace usage, it deleted the `xmlns:p14` declaration. When PowerPoint reads a file with `mc:Ignorable="p14"` but no `p14` namespace declared, it considers the file completely corrupted.
+
+**Fix:**
+Ripped out `xml.etree.ElementTree` entirely for reading/writing the final XML structures. Both `translate_xml_file` and `append_to_notes_xml` were rewritten to use safe, raw string manipulation (via regex `re.sub` and string slicing). This guarantees that no XML namespaces, original structure, or `mc:Ignorable` attributes are destroyed during the translation process.
+
+**Files Changed:**
+- `translator/main.py`
+
+### Commit History (Session 15)
+
+| Commit | Description |
+|---|---|
+| `9168ab8` | fix: replace ElementTree parsing with string regex to prevent destruction of unused namespaces and Office OpenXML schema violations |
+
+---
+
+## Session 16 — 2026-08-16 (Conversation `Current`)
+
+### Bug: Native Windows OCR script crashing on Windows PowerShell 5.1
+
+**Error:**
+The PowerShell script failed silently, or threw `Method invocation failed because [System.__ComObject] does not contain a method named 'GetAwaiter'` when trying to interact with WinRT Async APIs.
+
+**Root cause:**
+Windows PowerShell 5.1 does not natively understand how to await WinRT `IAsyncOperation` objects without explicit .NET bridge types loaded. The extension method `.GetAwaiter()` is contained in `System.Runtime.WindowsRuntime.dll`, which was not loaded. When the assembly is not loaded, PowerShell wraps the WinRT interface in a raw `System.__ComObject` and throws a MethodNotFound error.
+
+**Fix:**
+Implemented a rock-solid WinRT bridge polling loop (`Await-WinRt`) that forces the COM object to be cast to `[Windows.Foundation.IAsyncInfo]`, and provides a fallback using the COM-level `get_Status()` method to bypass PowerShell 5.1's tendency to hide properties on COM wrappers. Also copied `ocr_results.json` directly to the output directory so the user can debug the extraction locally.
+
+**Files Changed:**
+- `translator/ocr_batch.ps1`
+- `translator/image_handler.py`
+- `translator/main.py`
+
+### Commit History (Session 16)
+
+| Commit | Description |
+|---|---|
+| `e9a215c` | feat: add comprehensive OCR filtering logs for debugging |
+| `0bbc050` | fix: restore GetAwaiter() and Add-Type for WinRT async |
+| `e3c1888` | fix: use IAsyncInfo casting to support PowerShell 5.1 WinRT async |
