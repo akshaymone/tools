@@ -773,4 +773,44 @@ Added a validation pass before zipping that runs `ElementTree.parse()` on every 
 
 | Commit | Description |
 |---|---|
-| (Pending) | fix: correct notes XML body targeting with regex; fix zip arcnames to use forward slashes |
+| `a2f9e50` | fix: correct notes XML body targeting with regex; fix zip arcnames to use forward slashes |
+
+---
+
+## Session 18 — 2026-08-16 (Conversation `Current`)
+
+### Bug: PowerPoint repair prompt still appears after Session 17 fixes
+
+**User report:** Still getting the repair/corruption prompt even after the regex and arcname fixes. No `[XML INVALID]` lines in log.
+
+**Root cause:** The real culprit was **Step 1 — `python-pptx` saving the presentation**.
+
+`python-pptx` when saving silently **drops any OOXML part it does not understand** (charts, custom XML, SmartArt, ink shapes, video, external data connections, etc.) and also removes their `[Content_Types].xml` entries. This means the output PPTX is structurally incomplete compared to the original. When PowerPoint opens it, the missing parts trigger the repair prompt and those parts are permanently removed.
+
+The prior Session 15 fix (replacing `ElementTree` write-back with regex) solved namespace stripping by *our code* but the damage from `python-pptx.save()` was happening *before* our code even ran — on the `temp_init_pptx` intermediate file.
+
+No `[XML INVALID]` lines appeared because `ElementTree.parse()` only validates XML well-formedness. A file can be perfectly well-formed XML but still missing required OOXML parts, which is what PowerPoint detects.
+
+**Fix: Eliminate `python-pptx` from the save path entirely.**
+
+Replaced the 3-step process (python-pptx load → save → unzip) with:
+1. **Unzip the ORIGINAL PPTX directly** — zero transformation, all parts preserved.
+2. **`ensure_notes_slides(extract_dir)`** — pure string-template function that:
+   - Scans slide `.rels` files to find slides already having notes
+   - For slides without notes: writes a minimal `notesSlide{N}.xml` from `_NOTES_XML_TEMPLATE`
+   - Creates the corresponding `notesSlides/_rels/notesSlide{N}.xml.rels` using `_NOTES_RELS_TEMPLATE`
+   - Inserts a `<Relationship>` entry into the slide's `.rels` file using raw string replacement
+   - Adds `<Override>` entry to `[Content_Types].xml` using raw string replacement
+   - **Never uses `ET.write()` or python-pptx for writing** — all file writes are raw strings
+
+**Also removed `python-pptx` from `pyproject.toml` dependencies** (no longer needed at all). Bumped version to `0.1.3`.
+
+**Files changed:**
+- `translator/main.py` — removed `from pptx import Presentation`; added `_NOTES_XML_TEMPLATE`, `_NOTES_RELS_TEMPLATE`, `_parse_rels()`, `_next_free_rid()`, `ensure_notes_slides()`; rewrote `process_presentation` Step 1–2
+- `pyproject.toml` — removed `python-pptx` dependency, bumped to `0.1.3`
+
+### Commit History (Session 18)
+
+| Commit | Description |
+|---|---|
+| (Pending) | fix: eliminate python-pptx save — unzip original directly and create notes via string templates |

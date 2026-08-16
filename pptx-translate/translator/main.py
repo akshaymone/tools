@@ -1,6 +1,7 @@
 import argparse
 import logging
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -8,10 +9,62 @@ import zipfile
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
-from pptx import Presentation
 from tqdm import tqdm
 
 from translator.image_handler import ImageHandler
+
+# ---------------------------------------------------------------------------
+# Minimal notesSlide XML template — no python-pptx involved.
+# Deliberately references no notesMaster so PowerPoint applies its default.
+# ---------------------------------------------------------------------------
+_NOTES_XML_TEMPLATE = """\
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:notes xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" \
+xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" \
+xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <p:cSld><p:spTree>
+    <p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>
+    <p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/>\
+<a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>
+    <p:sp>
+      <p:nvSpPr>
+        <p:cNvPr id="2" name="Slide Image Placeholder 1"/>
+        <p:cNvSpPr><a:spLocks noGrp="1" noRot="1" noChangeAspect="1"/></p:cNvSpPr>
+        <p:nvPr><p:ph type="sldImg"/></p:nvPr>
+      </p:nvSpPr>
+      <p:spPr/>
+    </p:sp>
+    <p:sp>
+      <p:nvSpPr>
+        <p:cNvPr id="3" name="Notes Placeholder 2"/>
+        <p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr>
+        <p:nvPr><p:ph type="body" idx="1"/></p:nvPr>
+      </p:nvSpPr>
+      <p:spPr/>
+      <p:txBody>
+        <a:bodyPr/><a:lstStyle/>
+        <a:p><a:endParaRPr lang="en-US" dirty="0"/></a:p>
+      </p:txBody>
+    </p:sp>
+  </p:spTree></p:cSld>
+  <p:clrMapOvr><a:masterClr/></p:clrMapOvr>
+</p:notes>"""
+
+_NOTES_RELS_TEMPLATE = """\
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" \
+Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" \
+Target="../slides/{slide_name}"/>
+</Relationships>"""
+
+_NOTES_CONTENT_TYPE = (
+    'application/vnd.openxmlformats-officedocument'
+    '.presentationml.notesSlide+xml'
+)
+_NOTES_REL_TYPE = (
+    'http://schemas.openxmlformats.org/officeDocument/2006/relationships/notesSlide'
+)
 
 try:
     from dotenv import load_dotenv
@@ -145,27 +198,130 @@ def append_to_notes_xml(notes_xml_path: Path, new_texts: list):
     notes_xml_path.write_text(new_content, encoding='utf-8')
 
 
+def _parse_rels(rels_path: Path) -> list[dict]:
+    """Return list of {Id, Type, Target} dicts from a .rels file."""
+    try:
+        tree = ET.parse(rels_path)
+        ns = 'http://schemas.openxmlformats.org/package/2006/relationships'
+        return [
+            {'Id': r.get('Id'), 'Type': r.get('Type'), 'Target': r.get('Target')}
+            for r in tree.getroot().findall(f'{{{ns}}}Relationship')
+        ]
+    except Exception:
+        return []
+
+
+def _next_free_rid(rels: list[dict]) -> str:
+    """Find the next unused rId number."""
+    used = set()
+    for r in rels:
+        m = re.match(r'rId(\d+)', r.get('Id', ''))
+        if m:
+            used.add(int(m.group(1)))
+    n = 1
+    while n in used:
+        n += 1
+    return f'rId{n}'
+
+
+def ensure_notes_slides(extract_dir: Path) -> None:
+    """
+    Create minimal notesSlide XML + rels for any slide that lacks one.
+    Operates entirely on extracted files — python-pptx is never involved.
+    """
+    slides_dir = extract_dir / 'ppt' / 'slides'
+    notes_dir  = extract_dir / 'ppt' / 'notesSlides'
+    rels_dir   = slides_dir / '_rels'
+    notes_rels_dir = notes_dir / '_rels'
+    content_types_path = extract_dir / '[Content_Types].xml'
+
+    notes_dir.mkdir(parents=True, exist_ok=True)
+    notes_rels_dir.mkdir(parents=True, exist_ok=True)
+
+    # Read [Content_Types].xml as raw string to check/add content types
+    ct_content = content_types_path.read_text(encoding='utf-8')
+
+    slide_files = sorted(slides_dir.glob('slide*.xml'))
+    notes_index = 1  # we assign notes slide numbers sequentially
+
+    # Find the highest existing notesSlide index to avoid collisions
+    for existing in notes_dir.glob('notesSlide*.xml'):
+        m = re.match(r'notesSlide(\d+)\.xml', existing.name)
+        if m:
+            notes_index = max(notes_index, int(m.group(1)) + 1)
+
+    for slide_xml in slide_files:
+        slide_rel_path = rels_dir / f'{slide_xml.name}.rels'
+        rels = _parse_rels(slide_rel_path) if slide_rel_path.exists() else []
+
+        # Check if this slide already has a notesSlide relationship
+        has_notes = any(_NOTES_REL_TYPE in r.get('Type', '') for r in rels)
+        if has_notes:
+            continue
+
+        # Create the notesSlide XML
+        notes_name = f'notesSlide{notes_index}.xml'
+        notes_xml_path = notes_dir / notes_name
+        notes_xml_path.write_text(_NOTES_XML_TEMPLATE, encoding='utf-8')
+
+        # Create the notesSlide rels pointing back to the slide
+        notes_rel_content = _NOTES_RELS_TEMPLATE.format(slide_name=slide_xml.name)
+        (notes_rels_dir / f'{notes_name}.rels').write_text(notes_rel_content, encoding='utf-8')
+
+        # Add the notesSlide relationship to the slide's .rels file
+        new_rid = _next_free_rid(rels)
+        new_rel = (
+            f'  <Relationship Id="{new_rid}" Type="{_NOTES_REL_TYPE}" '
+            f'Target="../notesSlides/{notes_name}"/>\n'
+        )
+        if slide_rel_path.exists():
+            rel_text = slide_rel_path.read_text(encoding='utf-8')
+            # Insert before closing </Relationships>
+            rel_text = rel_text.replace('</Relationships>', new_rel + '</Relationships>')
+            slide_rel_path.write_text(rel_text, encoding='utf-8')
+        else:
+            # Create a fresh rels file
+            rels_dir.mkdir(parents=True, exist_ok=True)
+            fresh = (
+                '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+                '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">\n'
+                f'{new_rel}</Relationships>'
+            )
+            slide_rel_path.write_text(fresh, encoding='utf-8')
+
+        # Add content type entry if not already present
+        part_name = f'/ppt/notesSlides/{notes_name}'
+        if part_name not in ct_content:
+            ct_entry = (
+                f'  <Override PartName="{part_name}" '
+                f'ContentType="{_NOTES_CONTENT_TYPE}"/>\n'
+            )
+            ct_content = ct_content.replace('</Types>', ct_entry + '</Types>')
+
+        log.debug(f'Created notes slide {notes_name} for {slide_xml.name}')
+        notes_index += 1
+
+    # Write back updated [Content_Types].xml
+    content_types_path.write_text(ct_content, encoding='utf-8')
+
+
 def process_presentation(input_pptx: Path, output_pptx: Path, ocr_lang: str, min_text_height: int, provider: str = None):
     translator = get_translator(provider)
-    
+
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_dir_path = Path(temp_dir)
-        
-        # Step 1: Initialize Notes Slides using python-pptx
-        log.info("Initializing speaker notes slides...")
-        prs = Presentation(input_pptx)
-        for slide in prs.slides:
-            if not slide.has_notes_slide:
-                _ = slide.notes_slide
-        
-        temp_init_pptx = temp_dir_path / "init.pptx"
-        prs.save(temp_init_pptx)
-        
-        # Step 2: Unzip the initialized PPTX
+
+        # Step 1: Unzip the ORIGINAL PPTX directly — never touch python-pptx save.
+        # python-pptx silently drops unsupported parts (charts, custom XML, ink, etc.)
+        # when it saves, causing PowerPoint's repair prompt.
         log.info("Unzipping presentation...")
         extract_dir = temp_dir_path / "extracted"
-        with zipfile.ZipFile(temp_init_pptx, 'r') as zip_ref:
+        with zipfile.ZipFile(input_pptx, 'r') as zip_ref:
             zip_ref.extractall(extract_dir)
+
+        # Step 2: Inject missing notesSlide XML files using string templates only.
+        log.info("Ensuring notes slides exist...")
+        ensure_notes_slides(extract_dir)
 
         # Step 3: Translate all slide XMLs directly
         slides_dir = extract_dir / "ppt" / "slides"
