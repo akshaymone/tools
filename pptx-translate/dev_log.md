@@ -485,4 +485,26 @@ User reported that `pytesseract` was still finicky/not working properly. We disc
 
 | Commit | Description |
 |---|---|
-| (Pending) | feat: replace tesseract with batched native windows OCR via powershell |
+| `b72adb8` | feat: replace tesseract with batched native windows OCR via powershell |
+
+---
+
+## Session 11 — 2026-08-16 (Conversation `Current`)
+
+### Context
+Since the tool was previously converted to a proper Python package (installable via `pip install .`), maintaining a separate `requirements.txt` became redundant and led to out-of-sync dependencies after removing Tesseract. Furthermore, the newly added `.ps1` script wouldn't be included in the Python wheel without explicit configuration.
+
+### Design Decisions
+- **Delete `requirements.txt`**: Completely removed to enforce a single source of truth for dependencies.
+- **Update `pyproject.toml` Dependencies**: Removed `pytesseract`, `Pillow`, and `pandas`.
+- **Fix PowerShell Packaging**: Added `[tool.setuptools.package-data]` pointing to `*.ps1` so that `ocr_batch.ps1` gets bundled properly when the package is installed via `pip`.
+
+### Files Changed
+- `requirements.txt` (Deleted)
+- `pyproject.toml` (Updated dependencies and package-data)
+
+### Commit History (Session 11)
+
+| Commit | Description |
+|---|---|
+| `5967fc1` | chore: remove requirements.txt and update pyproject.toml dependencies |
