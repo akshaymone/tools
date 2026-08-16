@@ -21,42 +21,38 @@ Function Write-Log {
 
 Function Await-WinRt {
     param($AsyncOp)
-    
-    $asyncInfo = $AsyncOp -as [Windows.Foundation.IAsyncInfo]
-    
-    $status = $null
-    while ($true) {
-        if ($null -ne $asyncInfo) {
-            $status = $asyncInfo.Status
-        } elseif ($AsyncOp.psobject.Methods.Match('get_Status').Count -gt 0) {
-            $status = $AsyncOp.get_Status()
-        } else {
-            $status = $AsyncOp.Status
-        }
-        
-        # 0 = Started
-        if ($status -ne 0 -and $null -ne $status) { 
-            break 
-        }
-        Start-Sleep -Milliseconds 10
-    }
-    
-    # 1 = Completed
-    if ($status -eq 1) {
-        return $AsyncOp.GetResults()
-    }
-    
-    throw "WinRT Async Operation failed. Status: $status"
+    [WinRtWaiter]::Wait($AsyncOp)
+    return $AsyncOp.GetResults()
 }
 
 Write-Log "Starting OCR batch process for directory: $ImagesDir"
 
-# Load WinRT types
+# Load WinRT types and compile C# waiter
+Add-Type -AssemblyName System.Runtime.WindowsRuntime
+$csharpCode = @"
+using System;
+using System.Threading;
+using Windows.Foundation;
+
+public class WinRtWaiter {
+    public static void Wait(object op) {
+        var info = (IAsyncInfo)op;
+        while (info.Status == AsyncStatus.Started) {
+            Thread.Sleep(10);
+        }
+        if (info.Status != AsyncStatus.Completed) {
+            throw new Exception("WinRT operation failed with status: " + info.Status);
+        }
+    }
+}
+"@
+Add-Type -TypeDefinition $csharpCode -ReferencedAssemblies "System.Runtime.WindowsRuntime"
+
 [Windows.Media.Ocr.OcrEngine, Windows.Foundation, ContentType = WindowsRuntime] | Out-Null
 [Windows.Graphics.Imaging.BitmapDecoder, Windows.Foundation, ContentType = WindowsRuntime] | Out-Null
 [Windows.Storage.StorageFile, Windows.Foundation, ContentType = WindowsRuntime] | Out-Null
 [Windows.Globalization.Language, Windows.Foundation, ContentType = WindowsRuntime] | Out-Null
-[Windows.Foundation.IAsyncInfo, Windows.Foundation, ContentType = WindowsRuntime] | Out-Null
+
 
 $lang = [Windows.Globalization.Language]::new($LangCode)
 $engine = [Windows.Media.Ocr.OcrEngine]::TryCreateFromLanguage($lang)
