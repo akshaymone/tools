@@ -508,3 +508,31 @@ Since the tool was previously converted to a proper Python package (installable 
 | Commit | Description |
 |---|---|
 | `5967fc1` | chore: remove requirements.txt and update pyproject.toml dependencies |
+
+---
+
+## Session 12 — 2026-08-16 (Conversation `Current`)
+
+### Bug: PowerShell script missing from installed package
+
+**Error:**
+```
+PowerShell OCR script failed: The argument '...\site-packages\translator\ocr_batch.ps1' to the -File parameter does not exist.
+```
+
+**Root cause:**
+The `ocr_batch.ps1` file was not being included in the built wheel when running `pip install .`. The `[tool.setuptools.package-data]` configuration alone in `pyproject.toml` was insufficient because `setuptools` often requires `include-package-data = true` and sometimes a `MANIFEST.in` to reliably include non-Python data files during the build process.
+
+**Fix:**
+- Added a `MANIFEST.in` file containing `include translator/*.ps1`.
+- Updated `pyproject.toml` to explicitly set `include-package-data = true` under the `[tool.setuptools]` table.
+
+**Files Changed:**
+- `MANIFEST.in` (New)
+- `pyproject.toml` (Updated)
+
+### Commit History (Session 12)
+
+| Commit | Description |
+|---|---|
+| (Pending) | fix: add MANIFEST.in and include-package-data to fix missing ps1 in pip install |

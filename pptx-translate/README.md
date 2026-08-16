@@ -70,6 +70,7 @@ python extract.py -i slides.pptx --skip-images
  ```
  pptx-translate/
  ├── pyproject.toml          ← Packaging and dependencies
+ ├── MANIFEST.in             ← Package data inclusion rules
  ├── .env.example            ← Configuration template
  ├── translator/             ← Main package source
  │   ├── main.py             ← Direct XML translation CLI (`translator` command)

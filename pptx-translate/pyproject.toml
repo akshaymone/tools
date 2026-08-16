@@ -19,6 +19,7 @@ dependencies = [
 translator = "translator.main:main"
 
 [tool.setuptools]
+include-package-data = true
 packages = ["translator"]
 
 [tool.setuptools.package-data]
