@@ -170,6 +170,14 @@ def process_presentation(input_pptx: Path, output_pptx: Path, ocr_lang: str, min
             ocr_lang_code = ocr_lang if ocr_lang != "kor" else "ko-KR"
             image_handler = ImageHandler(ocr_lang=ocr_lang_code, min_text_height=min_text_height)
             ocr_results = image_handler.process_batch(media_dir)
+            
+            # Copy OCR logs to output directory for debugging
+            ocr_log_dir = media_dir.parent / f"{media_dir.name}_logs"
+            if ocr_log_dir.exists():
+                dest_dir = output_pptx.parent / f"{output_pptx.stem}_ocr_logs"
+                log.info(f"Saving OCR logs to {dest_dir} for debugging")
+                import shutil
+                shutil.copytree(ocr_log_dir, dest_dir, dirs_exist_ok=True)
         
         slide_files = list(slides_dir.glob("slide*.xml"))
         
