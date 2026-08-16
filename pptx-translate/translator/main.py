@@ -43,7 +43,7 @@ _NOTES_XML_TEMPLATE = """\
       </p:txBody>
     </p:sp>
   </p:spTree></p:cSld>
-  <p:clrMapOvr><a:masterClr/></p:clrMapOvr>
+  <p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>
 </p:notes>"""
 
 _NOTES_CONTENT_TYPE = (
