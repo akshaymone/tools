@@ -20,56 +20,32 @@ Function Write-Log {
 }
 
 Function Await-WinRt {
-    param($AsyncOp)
-    [WinRtWaiter]::Wait($AsyncOp)
-    return $AsyncOp.GetResults()
+    param($AsyncOp, $ResultType)
+    $asTask = $global:asTaskGeneric.MakeGenericMethod($ResultType)
+    $netTask = $asTask.Invoke($null, @($AsyncOp))
+    return $netTask.GetAwaiter().GetResult()
 }
 
 Write-Log "Starting OCR batch process for directory: $ImagesDir"
 
-# Load WinRT types and compile C# waiter
-$csharpCode = @"
-using System;
-using System.Threading;
-using System.Threading.Tasks;
-using System.Runtime.InteropServices;
+# Load WinRT bridging assembly
+Add-Type -AssemblyName System.Runtime.WindowsRuntime
 
-[ComImport]
-[Guid("00000036-0000-0000-C000-000000000046")]
-[InterfaceType(ComInterfaceType.InterfaceIsIInspectable)]
-public interface IAsyncInfo {
-    uint Id { get; }
-    int Status { get; }
-    int ErrorCode { get; }
-    void Cancel();
-    void Close();
-}
-
-public class WinRtWaiter {
-    public static void Wait(object op) {
-        var task = Task.Run(() => {
-            var info = (IAsyncInfo)op;
-            // 0 = Started, 1 = Completed, 2 = Canceled, 3 = Error
-            while (info.Status == 0) {
-                Thread.Sleep(10);
-            }
-            if (info.Status != 1) {
-                throw new Exception("WinRT operation failed with status: " + info.Status);
-            }
-        });
-        
-        // GetAwaiter().GetResult() safely pumps COM STA messages, preventing deadlocks
-        task.GetAwaiter().GetResult();
-    }
-}
-"@
-Add-Type -TypeDefinition $csharpCode
+# Find the generic AsTask extension method for IAsyncOperation<TResult>
+$global:asTaskGeneric = ([System.WindowsRuntimeSystemExtensions].GetMethods() | 
+    Where-Object { 
+        $_.Name -eq 'AsTask' -and 
+        $_.GetParameters().Count -eq 1 -and 
+        $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1' 
+    })[0]
 
 [Windows.Media.Ocr.OcrEngine, Windows.Foundation, ContentType = WindowsRuntime] | Out-Null
+[Windows.Media.Ocr.OcrResult, Windows.Foundation, ContentType = WindowsRuntime] | Out-Null
 [Windows.Graphics.Imaging.BitmapDecoder, Windows.Foundation, ContentType = WindowsRuntime] | Out-Null
+[Windows.Graphics.Imaging.SoftwareBitmap, Windows.Foundation, ContentType = WindowsRuntime] | Out-Null
 [Windows.Storage.StorageFile, Windows.Foundation, ContentType = WindowsRuntime] | Out-Null
+[Windows.Storage.Streams.IRandomAccessStream, Windows.Foundation, ContentType = WindowsRuntime] | Out-Null
 [Windows.Globalization.Language, Windows.Foundation, ContentType = WindowsRuntime] | Out-Null
-
 
 $lang = [Windows.Globalization.Language]::new($LangCode)
 $engine = [Windows.Media.Ocr.OcrEngine]::TryCreateFromLanguage($lang)
@@ -86,19 +62,19 @@ foreach ($img in $images) {
     try {
         Write-Log "Processing: $($img.Name)"
         $op1 = [Windows.Storage.StorageFile]::GetFileFromPathAsync($img.FullName)
-        $file = Await-WinRt $op1
+        $file = Await-WinRt $op1 [Windows.Storage.StorageFile]
         
         $op2 = $file.OpenAsync([Windows.Storage.FileAccessMode]::Read)
-        $stream = Await-WinRt $op2
+        $stream = Await-WinRt $op2 [Windows.Storage.Streams.IRandomAccessStream]
         
         $op3 = [Windows.Graphics.Imaging.BitmapDecoder]::CreateAsync($stream)
-        $decoder = Await-WinRt $op3
+        $decoder = Await-WinRt $op3 [Windows.Graphics.Imaging.BitmapDecoder]
         
         $op4 = $decoder.GetSoftwareBitmapAsync()
-        $softwareBitmap = Await-WinRt $op4
+        $softwareBitmap = Await-WinRt $op4 [Windows.Graphics.Imaging.SoftwareBitmap]
         
         $op5 = $engine.RecognizeAsync($softwareBitmap)
-        $ocrResult = Await-WinRt $op5
+        $ocrResult = Await-WinRt $op5 [Windows.Media.Ocr.OcrResult]
         
         $lines = @()
         if ($null -ne $ocrResult -and $null -ne $ocrResult.Lines) {
