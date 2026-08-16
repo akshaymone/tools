@@ -619,21 +619,108 @@ Ripped out `xml.etree.ElementTree` entirely for reading/writing the final XML st
 
 ## Session 16 — 2026-08-16 (Conversation `Current`)
 
-### Bug: Native Windows OCR script crashing on Windows PowerShell 5.1
+### Overview
+Live end-to-end testing of `ocr_batch.ps1` on Windows PowerShell 5.1 with real PPTX images. Required multiple rounds of debugging to work around PowerShell 5.1's inability to natively interact with WinRT async APIs.
+
+---
+
+### Bug 1: `GetAwaiter` not found on `System.__ComObject`
 
 **Error:**
-The PowerShell script failed silently, or threw `Method invocation failed because [System.__ComObject] does not contain a method named 'GetAwaiter'` when trying to interact with WinRT Async APIs.
+```
+Method invocation failed because [System.__ComObject] does not contain a method named 'GetAwaiter'.
+```
 
 **Root cause:**
-Windows PowerShell 5.1 does not natively understand how to await WinRT `IAsyncOperation` objects without explicit .NET bridge types loaded. The extension method `.GetAwaiter()` is contained in `System.Runtime.WindowsRuntime.dll`, which was not loaded. When the assembly is not loaded, PowerShell wraps the WinRT interface in a raw `System.__ComObject` and throws a MethodNotFound error.
+`.GetAwaiter()` is an extension method from `System.Runtime.WindowsRuntime.dll`. Without this assembly loaded (or with the COM wrapper not recognizing it), PowerShell 5.1 wraps WinRT objects in `System.__ComObject` which has no such method.
 
-**Fix:**
-Implemented a rock-solid WinRT bridge polling loop (`Await-WinRt`) that forces the COM object to be cast to `[Windows.Foundation.IAsyncInfo]`, and provides a fallback using the COM-level `get_Status()` method to bypass PowerShell 5.1's tendency to hide properties on COM wrappers. Also copied `ocr_results.json` directly to the output directory so the user can debug the extraction locally.
+**Fix attempted:** Load `System.Runtime.WindowsRuntime` via `Add-Type -AssemblyName` — but the STA thread deadlocked during WinRT completion callbacks.
 
-**Files Changed:**
-- `translator/ocr_batch.ps1`
-- `translator/image_handler.py`
-- `translator/main.py`
+---
+
+### Bug 2: Infinite hang after `Processing: image1.png`
+
+**Root cause:**
+PowerShell 5.1 runs in a Single-Threaded Apartment (STA). The WinRT async completion callback needs to be marshalled back to the main thread. Our polling loop blocked the main thread with `Thread.Sleep`, preventing the callback from ever firing → deadlock.
+
+**Fix attempted:** Move polling to `Task.Run(...)` and use `.GetAwaiter().GetResult()` on the task to pump STA messages. But then C# `Add-Type` compilation failed.
+
+---
+
+### Bug 3: `Add-Type` compilation error — `IAsyncInfo` / `AsyncStatus` not found
+
+**Error:**
+```
+The type or namespace name 'IAsyncInfo' could not be found
+The name 'AsyncStatus' does not exist in the current context
+```
+
+**Root cause:**
+The `Add-Type` C# compiler cannot find `Windows.Foundation` types because the Windows SDK `.winmd` files are not on the compiler's reference path by default.
+
+**Fix attempted:** Define `IAsyncInfo` as a `[ComImport]` interface inline to avoid the SDK dependency — but then `GetResults()` failed.
+
+---
+
+### Bug 4: `GetResults` not found on `System.__ComObject`
+
+**Error:**
+```
+Method invocation failed because [System.__ComObject] does not contain a method named 'GetResults'.
+```
+
+**Root cause:**
+Even after waiting correctly, PowerShell's COM wrapper does not expose the generic `GetResults()` method on the underlying WinRT object.
+
+**Fix:** Switch entirely to the official .NET bridging approach: use **reflection** to find `System.WindowsRuntimeSystemExtensions.AsTask<T>()` from `System.Runtime.WindowsRuntime.dll`. This converts WinRT `IAsyncOperation<T>` into a standard .NET `Task<T>`, which can be awaited normally.
+
+---
+
+### Bug 5: `MakeGenericMethod` receives a string instead of a `Type`
+
+**Error:**
+```
+Cannot convert argument "methodInstantiation", with value: "[Windows.Storage.StorageFile]",
+for "MakeGenericMethod" to type "System.Type"
+```
+
+**Root cause:**
+In PowerShell 5.1, when a `[TypeName]` expression is passed as a function argument **without parentheses**, PowerShell evaluates it as a plain `string` literal rather than a .NET `Type` object. Wrapping in `()` partially helped but was unreliable through function parameter binding.
+
+**Final Fix (v8 — working):**
+Completely removed the generic `Await-WinRt` function that accepted `$ResultType` as a parameter. Instead, **pre-build all 5 strongly-typed `AsTask` methods upfront** using direct type literals in `()` at the top of the script, before any loop. Call them directly — no Type ever passes through a function parameter:
+
+```powershell
+$awaitStorageFile = $asTaskGeneric.MakeGenericMethod([Windows.Storage.StorageFile])
+$awaitStream      = $asTaskGeneric.MakeGenericMethod([Windows.Storage.Streams.IRandomAccessStream])
+$awaitDecoder     = $asTaskGeneric.MakeGenericMethod([Windows.Graphics.Imaging.BitmapDecoder])
+$awaitBitmap      = $asTaskGeneric.MakeGenericMethod([Windows.Graphics.Imaging.SoftwareBitmap])
+$awaitOcrResult   = $asTaskGeneric.MakeGenericMethod([Windows.Media.Ocr.OcrResult])
+
+# Usage in loop:
+$file = $awaitStorageFile.Invoke($null, @($op1)).GetAwaiter().GetResult()
+```
+
+Also added `$SCRIPT_VERSION` printed at the start of the log so it is easy to confirm which version is running.
+
+---
+
+### `--min-text-height` parameter confirmed working
+
+The `--min-text-height` flag is fully wired end-to-end:
+- `main.py` argparse: `--min-text-height` (default: `18`)
+- `ImageHandler.__init__`: accepts `min_text_height`
+- `image_handler.py` line 106: drops any OCR line with `height < min_text_height`
+
+Usage:
+```bash
+translator -i input.pptx -o output.pptx --min-text-height 18
+```
+
+---
+
+### Files Changed in Session 16
+- `translator/ocr_batch.ps1` — complete rewrite of WinRT async handling
 
 ### Commit History (Session 16)
 
@@ -642,3 +729,11 @@ Implemented a rock-solid WinRT bridge polling loop (`Await-WinRt`) that forces t
 | `e9a215c` | feat: add comprehensive OCR filtering logs for debugging |
 | `0bbc050` | fix: restore GetAwaiter() and Add-Type for WinRT async |
 | `e3c1888` | fix: use IAsyncInfo casting to support PowerShell 5.1 WinRT async |
+| `2b1035c` | fix: use IAsyncInfo casting to support PowerShell 5.1 WinRT async |
+| `d8bbd5b` | fix: use C# helper to correctly cast IAsyncInfo and prevent infinite loop |
+| `0a0007f` | fix: prevent STA deadlock during WinRT async wait |
+| `7b280ed` | fix: use ComImport for IAsyncInfo to avoid WinMD compilation errors |
+| `2112c63` | fix: complete rewrite of WinRT wait using pure PowerShell Reflection of AsTask |
+| `6262338` | fix: cast ResultType from string to type to fix MakeGenericMethod error |
+| `f25545e` | fix: wrap type args in () so PowerShell evaluates them as Type objects |
+| `8c8356a` | fix(v8): pre-build typed AsTask methods upfront — final working solution |

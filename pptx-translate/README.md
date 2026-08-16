@@ -46,7 +46,27 @@ translator -i input.pptx -o output_english.pptx
 # Force a specific provider
 translator -i input.pptx -o output_english.pptx --provider ollama
 translator -i input.pptx -o output_english.pptx --provider office
+
+# Only translate text taller than 24px (useful to skip small captions/labels)
+translator -i input.pptx -o output_english.pptx --min-text-height 24
+
+# Enable verbose logging
+translator -i input.pptx -o output_english.pptx --verbose
 ```
+
+#### All Options
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-i` / `--input` | *(required)* | Input `.pptx` file path |
+| `-o` / `--output` | *(required)* | Output `.pptx` file path |
+| `--lang` | `kor` | OCR language code (e.g. `ko-KR`, `kor`) |
+| `--min-text-height` | `18` | Minimum OCR text height in pixels to translate. Lines shorter than this are ignored (filters out small labels, watermarks, etc.) |
+| `--provider` | *(from .env)* | LLM provider: `ollama` or `office` |
+| `--verbose` | `false` | Enable debug logging |
+
+> **Note:** The PowerShell OCR script (`ocr_batch.ps1`) prints its version number at the start of each run (e.g. `ocr_batch.ps1 v8 starting`) — check the log file in `<images_dir>_logs/ocr_batch.log` to confirm you are running the latest version.
+
 
 ### 2. Markdown Extraction (`extract.py`) - Secondary Tool
 
