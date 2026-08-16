@@ -536,3 +536,31 @@ The `ocr_batch.ps1` file was not being included in the built wheel when running 
 | Commit | Description |
 |---|---|
 | (Pending) | fix: add MANIFEST.in and include-package-data to fix missing ps1 in pip install |
+
+---
+
+## Session 13 — 2026-08-16 (Conversation `Current`)
+
+### Bug: PowerPoint file corruption from Speaker Notes
+
+**Error:**
+After translation, opening the output `.pptx` file in PowerPoint triggers a "PowerPoint found a problem with content in the file. PowerPoint can attempt to repair the presentation." prompt. The repair process deletes the speaker notes entirely.
+
+**Root cause:**
+The original implementation of `append_to_notes_xml` combined all translated image text lines using `\n.join(slide_ocr_texts)` and inserted the resulting string into a single `<a:t>` (text) tag in the speaker notes XML.
+The Office Open XML drawing text schema (`<a:t>`) strictly prohibits newline characters. When PowerPoint's XML parser encountered these newlines, it considered the XML malformed, leading to the corruption prompt and subsequent deletion of the notes.
+
+**Fix:**
+Updated `append_to_notes_xml` in `translator/main.py` to:
+1. Accept a list of strings instead of a single string.
+2. Iterate through the lines and generate a separate `<a:p>` (paragraph), `<a:r>` (run), and `<a:t>` element for each text line, which complies with the Open XML standard.
+3. Added more robust targeting to ensure text is appended to the specific shape matching `<p:ph type="body"/>` instead of the first text body it finds.
+
+**Files Changed:**
+- `translator/main.py`
+
+### Commit History (Session 13)
+
+| Commit | Description |
+|---|---|
+| (Pending) | fix: fix PPTX corruption caused by injecting newline characters into speaker notes XML tags |

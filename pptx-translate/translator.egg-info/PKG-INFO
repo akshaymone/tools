@@ -1,3 +1,14 @@
+Metadata-Version: 2.4
+Name: translator
+Version: 0.1.0
+Summary: Korean to English PPTX Translator
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: python-pptx>=0.6.23
+Requires-Dist: tqdm>=4.66.0
+Requires-Dist: python-dotenv>=1.0.0
+Requires-Dist: langchain-core>=0.2.0
+
 # translator (Korean PPTX Translator)
 
 Offline PowerPoint text translator and Markdown extractor.  
@@ -37,7 +48,7 @@ copy .env.example .env
 
 This command translates Korean `.pptx` files into English `.pptx` files by unzipping the archive and manipulating the `<a:t>` tags. This perfectly preserves all fonts, styles, and layouts.
 
-It leverages the LLM setup from the `agents` package. Images are batched and processed using a PowerShell background script calling native Windows OCR. Both the Korean text and its translation are safely injected into the speaker notes as properly formatted Open XML paragraphs, preventing presentation corruption.
+It leverages the LLM setup from the `agents` package. Images are batched and processed using a PowerShell background script calling native Windows OCR. Both the Korean text and its translation are injected into the speaker notes.
 
 ```powershell
 # Translate using the default provider from your .env
@@ -70,7 +81,6 @@ python extract.py -i slides.pptx --skip-images
  ```
  pptx-translate/
  ├── pyproject.toml          ← Packaging and dependencies
- ├── MANIFEST.in             ← Package data inclusion rules
  ├── .env.example            ← Configuration template
  ├── translator/             ← Main package source
  │   ├── main.py             ← Direct XML translation CLI (`translator` command)

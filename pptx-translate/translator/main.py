@@ -91,8 +91,8 @@ def translate_xml_file(xml_path: Path, translator) -> None:
     if changed:
         tree.write(xml_path, encoding='utf-8', xml_declaration=True)
 
-def append_to_notes_xml(notes_xml_path: Path, new_text: str):
-    """Appends a new text paragraph to the speaker notes XML."""
+def append_to_notes_xml(notes_xml_path: Path, new_texts: list):
+    """Appends new text paragraphs to the speaker notes XML."""
     tree = ET.parse(notes_xml_path)
     root = tree.getroot()
     
@@ -101,20 +101,34 @@ def append_to_notes_xml(notes_xml_path: Path, new_text: str):
         return
         
     notes_txBody = None
+    # Find the shape that actually holds the notes body
     for sp in spTree.findall('./p:sp', NS):
         nvSpPr = sp.find('./p:nvSpPr', NS)
         if nvSpPr is not None:
-            txBody = sp.find('./p:txBody', NS)
-            if txBody is not None:
-                notes_txBody = txBody
-                break
+            ph = nvSpPr.find('.//p:ph', NS)
+            if ph is not None and ph.get('type') == 'body':
+                txBody = sp.find('./p:txBody', NS)
+                if txBody is not None:
+                    notes_txBody = txBody
+                    break
+
+    # Fallback to the first available txBody if specific placeholder not found
+    if notes_txBody is None:
+        for sp in spTree.findall('./p:sp', NS):
+            nvSpPr = sp.find('./p:nvSpPr', NS)
+            if nvSpPr is not None:
+                txBody = sp.find('./p:txBody', NS)
+                if txBody is not None:
+                    notes_txBody = txBody
+                    break
 
     if notes_txBody is not None:
-        p = ET.Element(f'{{{NS["a"]}}}p')
-        r = ET.SubElement(p, f'{{{NS["a"]}}}r')
-        t = ET.SubElement(r, f'{{{NS["a"]}}}t')
-        t.text = new_text
-        notes_txBody.append(p)
+        for text_line in new_texts:
+            p = ET.Element(f'{{{NS["a"]}}}p')
+            r = ET.SubElement(p, f'{{{NS["a"]}}}r')
+            t = ET.SubElement(r, f'{{{NS["a"]}}}t')
+            t.text = text_line
+            notes_txBody.append(p)
         tree.write(notes_xml_path, encoding='utf-8', xml_declaration=True)
 
 
@@ -188,7 +202,7 @@ def process_presentation(input_pptx: Path, output_pptx: Path, ocr_lang: str, min
                         slide_ocr_texts.append(f"Image Text: {kt} -> {translated}")
             
             if slide_ocr_texts and notes_xml_path and notes_xml_path.exists():
-                append_to_notes_xml(notes_xml_path, "\n".join(slide_ocr_texts))
+                append_to_notes_xml(notes_xml_path, slide_ocr_texts)
 
         # Step 5: Zip it back up
         log.info("Re-zipping presentation...")
