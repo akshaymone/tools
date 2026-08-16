@@ -575,10 +575,12 @@ Updated `append_to_notes_xml` in `translator/main.py` to:
 After translation, opening the output `.pptx` file in PowerPoint still triggers a "PowerPoint found a problem with content in the file" prompt. The repair process deletes the speaker notes entirely, and potentially some slides.
 
 **Root cause:**
-The LLM output for translated text occasionally included invisible control characters (e.g., `\x00`, `\x08`, `\x0b`) which are strictly prohibited in the XML 1.0 specification. Even though Python's `xml.etree.ElementTree` automatically escapes standard characters like `<` or `&`, it does NOT strip invalid control characters. When PowerPoint encounters these illegal characters in the XML (`<a:t>`), it marks the file as corrupted and deletes the affected slides/notes during repair.
+The LLM output for translated text frequently included newlines (`\n`) and occasionally invisible control characters (e.g., `\x00`, `\x08`). In the OpenXML DrawingML schema, the `<a:t>` (text) node strictly does not support newline characters, carriage returns, or tabs. When PowerPoint's XML parser encounters a `\n` inside an `<a:t>` tag, it considers the schema violated, triggering a file corruption prompt and causing it to completely delete the affected slides/notes during its repair process.
 
 **Fix:**
-Implemented a `clean_text(text)` helper function in `translator/main.py` that uses regex `r'[^\x09\x0A\x0D\x20-\uD7FF\uE000-\uFFFD\U00010000-\U0010FFFF]'` to strip all invalid XML 1.0 control characters from the translated text before it is injected into the slide or speaker notes XML.
+Implemented a `clean_text(text)` helper function in `translator/main.py` that:
+1. Uses regex to strip all invalid XML 1.0 control characters.
+2. Explicitly calls `.replace('\n', ' ').replace('\r', ' ').replace('\t', ' ')` to convert formatting characters into spaces before injecting them into the OpenXML `<a:t>` nodes.
 
 **Files Changed:**
 - `translator/main.py`
