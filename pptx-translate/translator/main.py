@@ -121,16 +121,20 @@ class LLMTranslator:
         if not texts:
             return []
         
-        prompt_lines = [f"{i+1}. {text}" for i, text in enumerate(texts)]
+        # Clean newlines from input texts to avoid confusing the LLM
+        clean_texts = [t.replace('\n', ' ').replace('\r', '') for t in texts]
+        
+        prompt_lines = []
+        for i, text in enumerate(clean_texts):
+            prompt_lines.append(f'<t id="{i}">{text}</t>')
         prompt = "\n".join(prompt_lines)
         
         system_msg = SystemMessage(
             content="You are a professional Korean to English translator for technical presentations.\n"
-                    "You will receive a numbered list of Korean text extracted from a PowerPoint slide.\n"
-                    "Translate each item to English, preserving the numbering.\n"
-                    "Return ONLY the numbered list of translations, one per line.\n"
-                    "Keep technical terms, brand names, and English words as-is.\n"
-                    "Format: each line must start with the number and period, e.g. \"1. translated text\""
+                    "You will receive several texts wrapped in <t id=\"...\"> tags.\n"
+                    "Translate each text to English. Return ONLY the translated texts wrapped in the EXACT same <t id=\"...\"> tags.\n"
+                    "Do not add any other text, explanations, or markdown.\n"
+                    "Keep technical terms, brand names, and English words as-is."
         )
         
         try:
@@ -138,16 +142,14 @@ class LLMTranslator:
             response_text = response.content.strip()
             
             translated = []
-            lines = response_text.split('\n')
-            pattern = re.compile(r'^\d+\.\s*(.*)')
-            for line in lines:
-                m = pattern.match(line.strip())
+            for i in range(len(texts)):
+                pattern = re.compile(rf'<t\s+id=["\']?{i}["\']?>(.*?)</t>', re.DOTALL | re.IGNORECASE)
+                m = pattern.search(response_text)
                 if m:
                     translated.append(m.group(1).strip())
-            
-            if len(translated) != len(texts):
-                log.warning(f"Batch translation count mismatch: expected {len(texts)}, got {len(translated)}")
-                return texts
+                else:
+                    # Fallback if tag is missing, just append the original text
+                    translated.append(texts[i])
             
             return translated
         except Exception as e:
