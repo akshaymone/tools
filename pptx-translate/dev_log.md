@@ -987,3 +987,29 @@ However, during manual testing, the user found that `markitdown` did not perform
 | Commit | Description |
 |---|---|
 | `HEAD` | docs: update README for feature/md-export branch and log pivot to custom MD extractor |
+
+---
+
+## Session 24 — 2026-08-18 (Conversation `Current`)
+
+### Problem: Implementing Option B (Custom XML-to-Markdown)
+**Goal:** Implement a robust custom XML-to-Markdown exporter capable of extracting slides, text formatting (bold/italic), images, and OCR translations embedded in the speaker notes, completely bypassing `python-pptx` to avoid read/write corruption bugs.
+
+### Design Decisions
+| Decision | Rationale |
+|---|---|
+| Pure Python `ElementTree` Parser | By directly parsing the unzipped `.xml` files, we bypass the need for third-party libraries (like `python-pptx` or `markitdown`) that either add heavy dependencies, fail to extract specific OOXML elements properly, or corrupt files. |
+| Extracting Formatting | We process `<a:rPr>` to capture bold (`b="1"`) and italic (`i="1"`) properties, and `<a:pPr>` to detect lists (bullet points) to create visually accurate Markdown. |
+| Automatic OCR Inclusion | By extracting `<p:txBody>` from `notesSlide*.xml`, we inherently extract the OCR translations injected in earlier pipeline steps. |
+| Image Extraction | We follow relationship files (`_rels`) to locate and copy media items referenced in slides, outputting them into a sibling `{output_stem}_images` directory and embedding direct `![](...)` markdown links. |
+
+### Changes
+- Created `translator/md_exporter.py` containing the custom XML parser `export_markdown`.
+- Modified `translator/main.py` to add `--export-md` to the CLI arguments.
+- Hooked `export_markdown` into `process_presentation` to trigger right before final zipping.
+- Updated `README.md` to document the new `--export-md` flag.
+
+### Commit History (Session 24)
+| Commit | Description |
+|---|---|
+| `HEAD` | docs: update README and dev log for new custom Markdown exporter |

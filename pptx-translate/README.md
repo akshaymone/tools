@@ -44,6 +44,9 @@ copy .env.example .env
 # Translate using the provider configured in .env
 translator -i input.pptx -o output_english.pptx
 
+# Export the translated presentation to Markdown (generates output_english.md)
+translator -i input.pptx -o output_english.pptx --export-md
+
 # Override the LLM provider on the fly
 translator -i input.pptx -o output_english.pptx --provider ollama
 translator -i input.pptx -o output_english.pptx --provider office
@@ -61,6 +64,7 @@ translator -i input.pptx -o output_english.pptx --verbose
 |---|---|---|
 | `-i` / `--input` | *(required)* | Input `.pptx` file |
 | `-o` / `--output` | *(required)* | Output `.pptx` file |
+| `--export-md` | off | Export the translated presentation to Markdown (with images and speaker notes) |
 | `--lang` | `kor` | OCR language hint (e.g. `ko-KR`) |
 | `--min-text-height` | `18` | Minimum OCR text pixel height. Lines below this are ignored (filters small labels, watermarks) |
 | `--provider` | *(from `.env`)* | LLM provider: `ollama` or `office` |
