@@ -21,8 +21,8 @@ Translation is powered by the `agents` package LLM factory, supporting local **O
 ## Setup
 
 ```powershell
-# 1. Install the translator package directly from GitHub
-pip install "git+https://github.com/akshaymone/tools.git#subdirectory=pptx-translate"
+# 1. Install the translator package directly from GitHub (feature/md-export branch)
+pip install "git+https://github.com/akshaymone/tools.git@feature/md-export#subdirectory=pptx-translate"
 
 # 2. Copy the example config and fill in your LLM settings
 copy .env.example .env

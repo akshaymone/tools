@@ -961,3 +961,29 @@ New method that:
 | Commit | Description |
 |---|---|
 | `HEAD` | fix: aggregate PowerPoint text runs by paragraph before translation to preserve full sentence context |
+
+---
+
+## Session 23 — 2026-08-18 (Conversation `Current`)
+
+### Problem: PPTX to Markdown Export Tool Selection
+**User report:** We need to export the translated `.pptx` (including speaker notes with OCR translations) into a clean Markdown format. 
+
+**Evaluation & Test:**
+We evaluated `pptx2md` and `markitdown` (Microsoft). We decided to test `markitdown` locally since it explicitly supports extracting speaker notes without modifying the underlying PowerPoint file.
+However, during manual testing, the user found that `markitdown` did not perform well enough for our specific formatting and extraction needs.
+
+### Design Decisions
+| Decision | Rationale |
+|---|---|
+| Pivot to Custom XML Extractor (Option B) | Since generic packages failed to handle our specific notes extraction cleanly, we will build a custom XML-to-Markdown extractor. This allows 100% control over formatting, slide numbering, and OCR notes extraction, utilizing our existing robust XML unzipping architecture. |
+| Isolate Development | Created a new branch `feature/md-export` to build this feature safely without risking the stable XML translation code in `main`. |
+
+### Changes
+- Created branch `feature/md-export`.
+- Updated `README.md` install instructions to point to the new branch.
+
+### Commit History (Session 23)
+| Commit | Description |
+|---|---|
+| `HEAD` | docs: update README for feature/md-export branch and log pivot to custom MD extractor |
