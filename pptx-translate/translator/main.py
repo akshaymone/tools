@@ -416,7 +416,7 @@ def main():
     parser.add_argument("-i", "--input",  required=True)
     parser.add_argument("-o", "--output", required=True)
     parser.add_argument("--lang",            default="kor")
-    parser.add_argument("--min-text-height", type=int, default=18)
+    parser.add_argument("--min-text-height", type=int, default=5)
     parser.add_argument("--provider",        default=None)
     parser.add_argument("--verbose",         action="store_true")
     parser.add_argument(

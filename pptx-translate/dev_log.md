@@ -844,3 +844,38 @@ When switching from `pytesseract` to Native Windows OCR in an earlier session, t
 | Commit | Description |
 |---|---|
 | `HEAD` | fix: resolve XML mismatched tag corruption and relax OCR character limits |
+
+---
+
+## Session 20 — 2026-08-18 (Conversation `Current`)
+
+### Bug: Mixed Korean/English OCR text dropped by Korean ratio filter
+
+**User report:**
+```
+[image5.png] Raw OCR text (height=42): Vendor 모한
+-> Dropped: Not enough Korean characters
+```
+
+**Root cause:**
+The text `"Vendor 모한"` contains 2 Hangul characters out of 9 total characters, giving a Korean ratio of 2/9 = 0.22 (22%). The `_MIN_KOREAN_RATIO` threshold was set to `0.40` (40%), causing `_is_korean_text()` to return `False` and drop the line. This is incorrect — Korean technical presentations frequently mix English brand names, technical terms, and abbreviations with Korean text. A 40% ratio filter is too aggressive for this use case.
+
+Additionally, the default `min_text_height` of `18` px was too high and was skipping smaller but meaningful text in images.
+
+**Fix:**
+
+| Setting | Before | After | Rationale |
+|---|---|---|---|
+| `_MIN_KOREAN_RATIO` | 0.40 (40%) | **0.15 (15%)** | Allows mixed-language lines (e.g. "Vendor 모한" at 22%) while still filtering pure-English/noise (0%) |
+| `min_text_height` default | 18 px | **5 px** | User wants all text ≥ 5 px height considered for translation |
+
+**Files changed:**
+- `translator/image_handler.py` — lowered `_MIN_KOREAN_RATIO` to `0.15`; changed default `min_text_height` to `5`
+- `translator/main.py` — updated `--min-text-height` CLI default from `18` to `5`
+
+### Commit History (Session 20)
+
+| Commit | Description |
+|---|---|
+| `HEAD` | fix: lower Korean ratio threshold and min-text-height to prevent dropping valid mixed-language OCR text |
+

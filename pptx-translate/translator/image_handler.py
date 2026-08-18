@@ -7,7 +7,7 @@ from pathlib import Path
 log = logging.getLogger(__name__)
 
 _HANGUL_RE = re.compile(r"[\uAC00-\uD7A3\u1100-\u11FF\u3130-\u318F]")
-_MIN_KOREAN_RATIO = 0.40
+_MIN_KOREAN_RATIO = 0.15
 _MIN_HANGUL_CHARS = 1
 _MIN_SOURCE_LEN = 1
 
@@ -37,7 +37,7 @@ def _clean_ocr_text(text: str) -> str:
     return " ".join(kept).strip()
 
 class ImageHandler:
-    def __init__(self, confidence: int = 60, ocr_lang: str = "ko-KR", min_text_height: int = 18) -> None:
+    def __init__(self, confidence: int = 60, ocr_lang: str = "ko-KR", min_text_height: int = 5) -> None:
         # Note: confidence is no longer used by native Windows OCR, kept for compat
         self.ocr_lang = ocr_lang if ocr_lang != "kor" else "ko-KR"
         self.min_text_height = min_text_height
