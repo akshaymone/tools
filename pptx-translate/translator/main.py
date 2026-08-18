@@ -12,6 +12,7 @@ from xml.etree import ElementTree as ET
 from tqdm import tqdm
 
 from translator.image_handler import ImageHandler
+from translator.md_exporter import export_markdown
 
 # ---------------------------------------------------------------------------
 # Minimal notesSlide XML template — no python-pptx involved.
@@ -407,6 +408,7 @@ def process_presentation(
     skip_translate: bool = False,
     skip_notes: bool = False,
     save_stages: bool = False,
+    export_md: bool = False,
 ) -> None:
     log_dir = output_pptx.parent / f'{output_pptx.stem}_logs'
     log_dir.mkdir(parents=True, exist_ok=True)
@@ -546,7 +548,13 @@ def process_presentation(
             except ET.ParseError as exc:
                 log.warning(f"[XML INVALID] {xml_check.relative_to(extract_dir).as_posix()} — {exc}")
 
-        # Step 6: Re-zip
+        # Step 6: Export Markdown
+        if export_md:
+            log.info("Exporting translated presentation to Markdown...")
+            md_path = output_pptx.with_suffix('.md')
+            export_markdown(extract_dir, md_path)
+
+        # Step 7: Re-zip
         log.info("Re-zipping presentation...")
         _rezip(extract_dir, output_pptx)
 
@@ -577,6 +585,10 @@ def main():
         "--save-stages", action="store_true",
         help="Save stage_after_notes.pptx and stage_after_translate.pptx checkpoints for inspection."
     )
+    parser.add_argument(
+        "--export-md", action="store_true",
+        help="Export the translated presentation and speaker notes to a Markdown file."
+    )
 
     args = parser.parse_args()
 
@@ -597,6 +609,7 @@ def main():
         skip_translate=args.skip_translate,
         skip_notes=args.skip_notes,
         save_stages=args.save_stages,
+        export_md=args.export_md,
     )
 
 if __name__ == "__main__":
