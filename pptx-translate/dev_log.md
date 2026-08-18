@@ -814,3 +814,33 @@ Replaced the 3-step process (python-pptx load → save → unzip) with:
 | Commit | Description |
 |---|---|
 | `40c9e82` | fix: eliminate python-pptx save — unzip original directly and create notes via string templates |
+
+---
+
+## Session 19 — 2026-08-18 (Conversation `Current`)
+
+### Bug: XML mismatched tag corruption and aggressive OCR filtering
+
+**User report:** 
+1. `[XML INVALID] ppt/slides/slide1.xml — mismatched tag: line 2, column 9442`
+2. Valid short Korean OCR lines like `텸C쳄작죌` were dropped due to "Not enough Korean characters".
+
+**Root cause analysis & Fixes:**
+
+#### Bug 1: `translate_xml_file` regex matching parent tags
+The regex `r'(<a:t[^>]*>)(.*?)(</a:t>)'` was matching tags like `<a:txBody>` and `<a:tc>` instead of just `<a:t>`. When matching the parent tag, it consumed the entire internal XML structure and replaced it with just the translated text, leading to unclosed child tags and causing the mismatched tag error upon parsing.
+**Fix:** Tightened the regex to strictly match `<a:t>` or `<a:t\s[^>/]*>` to prevent it from matching parent tags or self-closing tags.
+
+#### Bug 2: `_MIN_HANGUL_CHARS` too high for line-by-line OCR
+When switching from `pytesseract` to Native Windows OCR in an earlier session, the tool changed from extracting paragraph-blocks to line-by-line output. However, the thresholds `_MIN_HANGUL_CHARS = 5` and `_MIN_SOURCE_LEN = 6` were kept intact. Legitimate short Korean lines (like `시작` or `확인` on buttons) were now being aggressively dropped because they had fewer than 5 Hangul characters per line.
+**Fix:** Lowered `_MIN_HANGUL_CHARS` and `_MIN_SOURCE_LEN` to `1`. The 40% `_MIN_KOREAN_RATIO` check handles dropping noisy strings effectively.
+
+**Files changed:**
+- `translator/main.py` — updated regex in `translate_xml_file` to strictly target `<a:t>` tags.
+- `translator/image_handler.py` — lowered `_MIN_HANGUL_CHARS` and `_MIN_SOURCE_LEN` thresholds.
+
+### Commit History (Session 19)
+
+| Commit | Description |
+|---|---|
+| `HEAD` | fix: resolve XML mismatched tag corruption and relax OCR character limits |

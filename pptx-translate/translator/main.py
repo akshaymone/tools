@@ -137,7 +137,7 @@ def translate_xml_file(xml_path: Path, translator: LLMTranslator) -> None:
             return f"{prefix}{saxutils.escape(clean_text(translated))}{suffix}"
         return match.group(0)
 
-    new_content = re.sub(r'(<a:t[^>]*>)(.*?)(</a:t>)', replacer, content)
+    new_content = re.sub(r'(<a:t>|<a:t\s[^>/]*>)(.*?)(</a:t>)', replacer, content)
     if new_content != content:
         xml_path.write_text(new_content, encoding='utf-8')
 

@@ -8,8 +8,8 @@ log = logging.getLogger(__name__)
 
 _HANGUL_RE = re.compile(r"[\uAC00-\uD7A3\u1100-\u11FF\u3130-\u318F]")
 _MIN_KOREAN_RATIO = 0.40
-_MIN_HANGUL_CHARS = 5
-_MIN_SOURCE_LEN = 6
+_MIN_HANGUL_CHARS = 1
+_MIN_SOURCE_LEN = 1
 
 def _korean_ratio(text: str) -> float:
     if not text:
