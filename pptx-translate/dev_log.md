@@ -936,3 +936,28 @@ New method that:
 |---|---|
 | `HEAD` | feat: batch LLM translation per slide with richer prompt and comprehensive debug logging |
 
+
+## Session 22 — 2026-08-18 (Conversation `Current`)
+
+### Problem: Fragmented Text Translation Losing Context
+**User report:** Text sent to the LLM is fragmented into individual PowerPoint text runs (`<a:t>`). This caused grammatically connected sentences like "네이티브 모델을 구조 파일로 변환" to be sent as separate LLM prompts ("네이티브 모델", "을", "구조", "파일로 변환"). As a result, the LLM failed to translate particles and context correctly.
+
+### Design Decisions
+| Decision | Rationale |
+|---|---|
+| Paragraph-Level Extraction | PowerPoint breaks sentences into multiple `<a:t>` tags for mid-sentence formatting. By extracting text at the paragraph (`<a:p>`) level, the LLM receives the entire context of the sentence. |
+| Consolidated Re-injection | Re-injecting translated text directly into the first `<a:t>` tag of the paragraph and emptying subsequent tags ensures the paragraph's overarching style (bullet points, alignment) is maintained, even if mid-sentence formatting (like a single bold word) is lost. This is the industry standard for OOXML translation to maintain grammar and structure. |
+
+### Changes
+#### `translate_xml_file`
+- Implemented a two-pass regex approach based on the `<a:p>` tag.
+- **Pass 1:** Iterates through all `<a:p>` tags, extracts all `<a:t>` content, and concatenates them into a single string. If it contains Hangul, it is queued for batch translation.
+- **Pass 2:** After translation, replaces the text inside the *first* `<a:t>` tag of the translated paragraph with the English translation, and empties the remaining `<a:t>` tags in that paragraph to avoid text duplication.
+
+### Files Changed
+- `translator/main.py` — rewritten `translate_xml_file` to use `<a:p>` aggregation.
+
+### Commit History (Session 22)
+| Commit | Description |
+|---|---|
+| `HEAD` | fix: aggregate PowerPoint text runs by paragraph before translation to preserve full sentence context |
