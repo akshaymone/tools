@@ -879,3 +879,60 @@ Additionally, the default `min_text_height` of `18` px was too high and was skip
 |---|---|
 | `HEAD` | fix: lower Korean ratio threshold and min-text-height to prevent dropping valid mixed-language OCR text |
 
+---
+
+## Session 21 — 2026-08-18 (Conversation `Current`)
+
+### Problem: LLM translation quality — word-by-word context loss
+
+**User report:** Translation output is poor because text is being sent to the LLM one `<a:t>` tag at a time. The LLM sees isolated fragments like "프로젝트" or "개요" without any surrounding context, producing low-quality or nonsensical translations.
+
+### Design Decisions
+
+| Decision | Rationale |
+|---|---|
+| Batch all Korean text per slide into one LLM call | LLM sees full slide context → dramatically better translation |
+| Richer system prompt for technical presentations | Guide the LLM to preserve brand names, technical terms, English words |
+| Leave text untranslated on LLM failure | User can use PPTX built-in translate as fallback; better than garbage output |
+| Full debug logs to working directory | User can analyse LLM prompts/responses to diagnose and guide fixes |
+| Investigated Windows built-in translator | **No public offline translation API exists on Windows** — `Windows.Media.Ocr` has no translation equivalent. Cloud APIs (Azure Translator) require internet. Decided to keep LLM as sole engine. |
+
+### Changes
+
+#### 1. `LLMTranslator.translate_batch(texts: list[str]) -> list[str]`
+New method that:
+- Builds a numbered list prompt from all Korean texts on a slide
+- Uses a richer system message: *"You are a professional Korean to English translator for technical presentations..."*
+- Parses response by matching `^\d+\.\s*(.*)` per line
+- On count mismatch or exception, returns original texts unchanged (untranslated)
+
+#### 2. `translate_xml_file` — two-pass batch approach
+- **Pass 1**: Scan all `<a:t>` tags, collect those with Hangul into a numbered list
+- **Batch call**: Single `translate_batch()` call for the entire slide
+- **Pass 2**: Replace each `<a:t>` with its corresponding translation using an iterator
+- Logs every step to the debug log file
+
+#### 3. OCR text also batched
+- All OCR texts for a slide are collected, then batch-translated in one call
+- On failure, text is marked `[Korean] 원본텍스트` in speaker notes
+
+#### 4. Comprehensive logging to working directory
+- `{output_stem}_logs/translator.log` — all standard Python logging (INFO/DEBUG) via FileHandler
+- `{output_stem}_logs/translation_debug.log` — detailed translation trace:
+  - Every Korean `<a:t>` text found
+  - Full batch prompt sent to LLM
+  - Full LLM response
+  - Every mapping: `original -> translated`
+  - Warnings for untranslated text
+  - Summary stats: total slides, texts found, translated, failed
+- `setup_logging()` updated with `log_dir` parameter and `force=True` to add FileHandler
+
+### Files Changed
+- `translator/main.py` — all changes above
+
+### Commit History (Session 21)
+
+| Commit | Description |
+|---|---|
+| `HEAD` | feat: batch LLM translation per slide with richer prompt and comprehensive debug logging |
+

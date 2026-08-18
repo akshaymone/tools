@@ -71,12 +71,19 @@ except ImportError as e:
     sys.exit(1)
 
 
-def setup_logging(verbose: bool):
+def setup_logging(verbose: bool, log_dir: Path = None):
     level = logging.DEBUG if verbose else logging.INFO
+    handlers = [logging.StreamHandler()]
+    if log_dir:
+        log_dir.mkdir(parents=True, exist_ok=True)
+        handlers.append(logging.FileHandler(log_dir / 'translator.log', encoding='utf-8'))
+        
     logging.basicConfig(
         format="%(asctime)s [%(levelname)s] %(message)s",
         datefmt="%H:%M:%S",
         level=level,
+        handlers=handlers,
+        force=True
     )
 
 log = logging.getLogger(__name__)
@@ -110,6 +117,43 @@ class LLMTranslator:
             log.warning(f"LLM translation failed for '{text[:30]}': {e}")
             return text
 
+    def translate_batch(self, texts: list[str]) -> list[str]:
+        if not texts:
+            return []
+        
+        prompt_lines = [f"{i+1}. {text}" for i, text in enumerate(texts)]
+        prompt = "\n".join(prompt_lines)
+        
+        system_msg = SystemMessage(
+            content="You are a professional Korean to English translator for technical presentations.\n"
+                    "You will receive a numbered list of Korean text extracted from a PowerPoint slide.\n"
+                    "Translate each item to English, preserving the numbering.\n"
+                    "Return ONLY the numbered list of translations, one per line.\n"
+                    "Keep technical terms, brand names, and English words as-is.\n"
+                    "Format: each line must start with the number and period, e.g. \"1. translated text\""
+        )
+        
+        try:
+            response = self.llm.invoke([system_msg, HumanMessage(content=prompt)])
+            response_text = response.content.strip()
+            
+            translated = []
+            lines = response_text.split('\n')
+            pattern = re.compile(r'^\d+\.\s*(.*)')
+            for line in lines:
+                m = pattern.match(line.strip())
+                if m:
+                    translated.append(m.group(1).strip())
+            
+            if len(translated) != len(texts):
+                log.warning(f"Batch translation count mismatch: expected {len(texts)}, got {len(translated)}")
+                return texts
+            
+            return translated
+        except Exception as e:
+            log.warning(f"Batch translation failed: {e}")
+            return texts
+
 
 # ---------------------------------------------------------------------------
 # XML helpers
@@ -122,19 +166,58 @@ def clean_text(text: str) -> str:
     return cleaned.replace('\n', ' ').replace('\r', ' ').replace('\t', ' ')
 
 
-def translate_xml_file(xml_path: Path, translator: LLMTranslator) -> None:
+def translate_xml_file(xml_path: Path, translator: LLMTranslator, log_file) -> None:
     """Translate all <a:t> tags that contain Hangul, in-place via regex."""
     import xml.sax.saxutils as saxutils
     _HANGUL_RE = re.compile(r'[\uac00-\ud7a3\u1100-\u11ff\u3130-\u318f]')
 
     content = xml_path.read_text(encoding='utf-8')
 
+    matches = list(re.finditer(r'(<a:t>|<a:t\s[^>/]*>)(.*?)(</a:t>)', content))
+    
+    texts_to_translate = []
+    
+    for match in matches:
+        text = match.group(2)
+        unescaped = saxutils.unescape(text)
+        if unescaped and _HANGUL_RE.search(unescaped):
+            texts_to_translate.append(unescaped)
+            log_file.write(f"Found Korean text: {unescaped}\n")
+            
+    if not texts_to_translate:
+        return
+        
+    if hasattr(log_file, 'stats'):
+        log_file.stats['total_texts_found'] += len(texts_to_translate)
+
+    prompt_lines = [f"{i+1}. {text}" for i, text in enumerate(texts_to_translate)]
+    prompt = "\n".join(prompt_lines)
+    log_file.write("--- BATCH PROMPT ---\n" + prompt + "\n--------------------\n")
+    
+    translated_texts = translator.translate_batch(texts_to_translate)
+    
+    log_file.write("--- BATCH RESPONSE ---\n")
+    for i, t in enumerate(translated_texts):
+        log_file.write(f"{i+1}. {t}\n")
+    log_file.write("----------------------\n")
+    
+    for orig, trans in zip(texts_to_translate, translated_texts):
+        log_file.write(f"Mapping: {orig} -> {trans}\n")
+        if orig == trans:
+            log_file.write(f"Warning: Text untranslated: {orig}\n")
+            if hasattr(log_file, 'stats'):
+                log_file.stats['total_failed'] += 1
+        else:
+            if hasattr(log_file, 'stats'):
+                log_file.stats['total_translated'] += 1
+            
+    translated_iter = iter(translated_texts)
     def replacer(match):
         prefix, text, suffix = match.group(1), match.group(2), match.group(3)
         unescaped = saxutils.unescape(text)
         if unescaped and _HANGUL_RE.search(unescaped):
-            translated = translator.translate(unescaped)
-            return f"{prefix}{saxutils.escape(clean_text(translated))}{suffix}"
+            trans = next(translated_iter)
+            return f"{prefix}{saxutils.escape(clean_text(trans))}{suffix}"
         return match.group(0)
 
     new_content = re.sub(r'(<a:t>|<a:t\s[^>/]*>)(.*?)(</a:t>)', replacer, content)
@@ -308,7 +391,13 @@ def process_presentation(
     skip_notes: bool = False,
     save_stages: bool = False,
 ) -> None:
-    with tempfile.TemporaryDirectory() as temp_dir:
+    log_dir = output_pptx.parent / f'{output_pptx.stem}_logs'
+    log_dir.mkdir(parents=True, exist_ok=True)
+    
+    with tempfile.TemporaryDirectory() as temp_dir, open(log_dir / 'translation_debug.log', 'w', encoding='utf-8') as log_file:
+        log_file.write("=== Translation Debug Log ===\n")
+        log_file.stats = {'total_slides': 0, 'total_texts_found': 0, 'total_translated': 0, 'total_failed': 0}
+        
         extract_dir = Path(temp_dir) / 'extracted'
 
         log.info("Unzipping presentation...")
@@ -362,8 +451,11 @@ def process_presentation(
             log.info("[SKIP-TRANSLATE] Skipping all LLM translation calls.")
 
         for slide_xml in tqdm(list(slides_dir.glob('slide*.xml')), desc="Processing Slides"):
+            log_file.stats['total_slides'] += 1
+            log_file.write(f"\n=== Processing {slide_xml.name} ===\n")
+            
             if not skip_translate:
-                translate_xml_file(slide_xml, translator)
+                translate_xml_file(slide_xml, translator, log_file)
 
             slide_rel_path = rels_dir / f'{slide_xml.name}.rels'
             notes_xml_path = None
@@ -378,23 +470,56 @@ def process_presentation(
                         image_paths.append(media_dir / target.split('/')[-1])
 
             if notes_xml_path and notes_xml_path.exists() and not skip_translate:
-                translate_xml_file(notes_xml_path, translator)
+                log_file.write(f"\n--- Processing notes for {slide_xml.name} ---\n")
+                translate_xml_file(notes_xml_path, translator, log_file)
 
             slide_ocr_texts = []
+            ocr_batch = []
             for img_path in image_paths:
                 if img_path.exists() and img_path.suffix.lower() in ('.png', '.jpg', '.jpeg'):
                     for kt in ocr_results.get(img_path.name, []):
-                        if skip_translate:
-                            slide_ocr_texts.append(f"Image Text (untranslated): {kt}")
+                        ocr_batch.append((img_path.name, kt))
+
+            if ocr_batch:
+                log_file.write(f"\n--- Processing OCR for {slide_xml.name} ---\n")
+                texts_to_translate = [kt for _, kt in ocr_batch]
+                log_file.write(f"Slide OCR Found {len(texts_to_translate)} texts\n")
+                log_file.stats['total_texts_found'] += len(texts_to_translate)
+                
+                if skip_translate:
+                    for img_name, kt in ocr_batch:
+                        slide_ocr_texts.append(f"Image Text (untranslated): {kt}")
+                else:
+                    log_file.write("--- OCR BATCH PROMPT ---\n")
+                    for i, t in enumerate(texts_to_translate):
+                        log_file.write(f"{i+1}. {t}\n")
+                    log_file.write("------------------------\n")
+                    
+                    translated_texts = translator.translate_batch(texts_to_translate)
+                    
+                    log_file.write("--- OCR BATCH RESPONSE ---\n")
+                    for i, t in enumerate(translated_texts):
+                        log_file.write(f"{i+1}. {t}\n")
+                    log_file.write("--------------------------\n")
+                    
+                    for (img_name, kt), translated in zip(ocr_batch, translated_texts):
+                        if kt == translated:
+                            slide_ocr_texts.append(f"Image Text: {kt} -> [Korean] {kt}")
+                            log_file.write(f"Warning: OCR Text untranslated: {kt}\n")
+                            log_file.stats['total_failed'] += 1
                         else:
-                            translated = translator.translate(kt)
-                            log.info(f"[OCR] {img_path.name}: {kt!r} -> {translated!r}")
+                            log.info(f"[OCR] {img_name}: {kt!r} -> {translated!r}")
                             slide_ocr_texts.append(f"Image Text: {kt} -> {translated}")
+                            log_file.stats['total_translated'] += 1
 
             if slide_ocr_texts and notes_xml_path and notes_xml_path.exists():
                 append_to_notes_xml(notes_xml_path, slide_ocr_texts)
 
         _save_stage("after_translate")
+        
+        log_file.write("\n=== Summary Stats ===\n")
+        for k, v in log_file.stats.items():
+            log_file.write(f"{k}: {v}\n")
 
         # Step 5: XML validation
         log.info("Validating XML files before zip...")
@@ -437,7 +562,6 @@ def main():
     )
 
     args = parser.parse_args()
-    setup_logging(args.verbose)
 
     in_path  = Path(args.input)
     out_path = Path(args.output)
@@ -445,6 +569,9 @@ def main():
         log.error(f"Input file not found: {in_path}")
         sys.exit(1)
     out_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    log_dir = out_path.parent / f'{out_path.stem}_logs'
+    setup_logging(args.verbose, log_dir)
 
     process_presentation(
         in_path, out_path, args.lang, args.min_text_height,
