@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "docx-translator"
+version = "0.1.0"
+description = "Korean to English DOCX Translator"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "tqdm>=4.66.0",
+    "python-dotenv>=1.0.0",
+    "langchain-core>=0.2.0"
+]
+
+[project.scripts]
+docx-translator = "docx_translator.main:main"
+
+[tool.setuptools]
+include-package-data = true
+packages = ["docx_translator"]
+
+[tool.setuptools.package-data]
+docx_translator = ["*.ps1"]
