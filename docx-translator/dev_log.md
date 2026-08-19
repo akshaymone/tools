@@ -961,3 +961,33 @@ New method that:
 | Commit | Description |
 |---|---|
 | `HEAD` | fix: aggregate PowerPoint text runs by paragraph before translation to preserve full sentence context |
+
+---
+
+## Session 23 — 2026-08-19 (Conversation `Current`)
+
+### Context
+Branched `pptx-translate` to create a dedicated `docx-translator` package. The goal is to apply the same non-destructive XML parsing (regex) and offline OCR translation pipeline to Word documents (`.docx`).
+
+### Architectural Pivot
+- **New Package:** Duplicated codebase to a new folder `docx-translator`, renamed internal module to `docx_translator`, and updated `pyproject.toml` and `MANIFEST.in`.
+- **Removed PPTX Dependencies:** Deleted all code relating to notes slide generation, `ppt/slides`, and `[Content_Types].xml` rewriting since DOCX is simpler.
+- **XML Parsing for DOCX:** Updated `translate_xml_file` to use WordprocessingML tags (`<w:p>` and `<w:t>`) instead of DrawingML tags. 
+- **OCR Injection:** Word doesn't have speaker notes. Implemented `inject_ocr_text` which parses `word/_rels/document.xml.rels` to map image IDs, finds the `<a:blip>` embed inside `document.xml`, and injects a new `<w:p>` paragraph formatted in italics directly below the image.
+
+### Bug: LLM Translation Failed on Large Documents
+**User report:** Text was not translated at all in DOCX files.
+**Root cause:** In PPTX, translations were batched per slide (approx. 5-10 paragraphs). In DOCX, the entire document resides in a single `document.xml`. The script was extracting *all* paragraphs in the document and sending them in a single massive prompt to the LLM, causing it to choke or return malformed XML tags, which triggered the fallback (leaving text untranslated).
+**Fix:** Implemented chunking in `translate_xml_file`. The script now batches paragraphs into chunks of 20 before sending them to `translate_batch()`, preventing LLM context overload and timeout errors.
+
+### Files Changed
+- `docx_translator/main.py`
+- `pyproject.toml`
+- `MANIFEST.in`
+- `README.md`
+- `dev_log.md`
+
+### Commit History (Session 23)
+| Commit | Description |
+|---|---|
+| (Pending) | feat: create docx-translator and implement LLM translation chunking |

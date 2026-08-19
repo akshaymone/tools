@@ -150,16 +150,24 @@ def translate_xml_file(xml_path: Path, translator: LLMTranslator, log_file) -> N
     if hasattr(log_file, 'stats'):
         log_file.stats['total_texts_found'] += len(texts_to_translate)
 
-    prompt_lines = [f"{i+1}. {text}" for i, text in enumerate(texts_to_translate)]
-    prompt = "\n".join(prompt_lines)
-    log_file.write("--- BATCH PROMPT ---\n" + prompt + "\n--------------------\n")
+    BATCH_SIZE = 20
+    translated_texts = []
     
-    translated_texts = translator.translate_batch(texts_to_translate)
-    
-    log_file.write("--- BATCH RESPONSE ---\n")
-    for i, t in enumerate(translated_texts):
-        log_file.write(f"{i+1}. {t}\n")
-    log_file.write("----------------------\n")
+    for i in range(0, len(texts_to_translate), BATCH_SIZE):
+        batch = texts_to_translate[i:i + BATCH_SIZE]
+        
+        prompt_lines = [f"{j+1}. {text}" for j, text in enumerate(batch)]
+        prompt = "\n".join(prompt_lines)
+        log_file.write(f"--- BATCH PROMPT (Chunk {i//BATCH_SIZE + 1}) ---\n" + prompt + "\n--------------------\n")
+        
+        translated_batch = translator.translate_batch(batch)
+        
+        log_file.write(f"--- BATCH RESPONSE (Chunk {i//BATCH_SIZE + 1}) ---\n")
+        for j, t in enumerate(translated_batch):
+            log_file.write(f"{j+1}. {t}\n")
+        log_file.write("----------------------\n")
+        
+        translated_texts.extend(translated_batch)
     
     for orig, trans in zip(texts_to_translate, translated_texts):
         log_file.write(f"Mapping: {orig} -> {trans}\n")
