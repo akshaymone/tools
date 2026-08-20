@@ -16,9 +16,14 @@ This pipeline respects a tight 4GB VRAM constraint by offloading large model inf
 ## Prerequisites
 
 1. **Python 3.10+**
-2. **Docker Desktop** (To run the local Qdrant vector database)
-3. **Microsoft Office** (Installed locally on Windows to enable the DOCX/PPTX to PDF conversion)
-4. **Windows 10/11** (Required for the built-in PowerShell OCR engine)
+2. **Microsoft Office** (Installed locally on Windows to enable the DOCX/PPTX to PDF conversion)
+3. **Windows 10/11** (Required for the built-in PowerShell OCR engine)
+4. **Docker Desktop** (To run the local Qdrant vector database)
+   - *If you don't have Docker installed, you can quickly install it via PowerShell as Administrator using the Windows Package Manager:*
+     ```powershell
+     winget install Docker.DockerDesktop
+     ```
+     *(Note: You will need to restart your computer and open Docker Desktop once to accept the terms before running containers).*
 
 ---
 
