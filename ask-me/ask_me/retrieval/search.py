@@ -23,11 +23,15 @@ class Retriever:
         # 1. Embed Query Text (BGE space for sections and flowchart logic)
         bge_query_vector = self.api.get_embeddings(query)
         
+        # 1.5 Embed Query Text (SigLIP space for zero-shot image retrieval)
+        logger.debug("Embedding query text via SigLIP text tower for cross-modal search.")
+        siglip_text_query_vector = self.siglip.embed_text(query)
+        
         # 2. Embed Query Image (SigLIP space for visual search)
-        siglip_query_vector = None
+        siglip_image_query_vector = None
         if query_image_base64:
             logger.info("Image provided in query. Embedding via local SigLIP.")
-            siglip_query_vector = self.siglip.embed_base64_image(query_image_base64)
+            siglip_image_query_vector = self.siglip.embed_base64_image(query_image_base64)
         
         # 3. Retrieve Sections (Text only)
         logger.debug("Searching 'sections' collection.")
@@ -54,11 +58,20 @@ class Retriever:
             )
         )
         
-        # Visual/Image Prefetch (using SigLIP vector) if provided
-        if siglip_query_vector:
+        # Visual Prefetch (using SigLIP Text vector to find matching images)
+        visual_prefetches.append(
+            models.Prefetch(
+                query=siglip_text_query_vector,
+                using="image",
+                limit=top_k
+            )
+        )
+        
+        # Visual/Image Prefetch (using SigLIP Image vector) if user uploaded an image
+        if siglip_image_query_vector:
             visual_prefetches.append(
                 models.Prefetch(
-                    query=siglip_query_vector,
+                    query=siglip_image_query_vector,
                     using="image",
                     limit=top_k
                 )

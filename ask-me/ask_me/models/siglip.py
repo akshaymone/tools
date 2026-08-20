@@ -43,3 +43,18 @@ class SigLIPEncoder:
             logger.error(f"Failed to embed image with SigLIP: {e}")
             # Return zeroed vector as fallback to not break Qdrant
             return [0.0] * 768
+
+    def embed_text(self, text: str) -> list[float]:
+        """Encodes text using the SigLIP text tower for cross-modal visual search."""
+        try:
+            with torch.no_grad():
+                inputs = self.processor(text=text, padding="max_length", truncation=True, return_tensors="pt").to(self.device)
+                text_features = self.model.get_text_features(**inputs)
+                
+                # Normalize the embeddings for cosine similarity
+                text_features = text_features / text_features.norm(p=2, dim=-1, keepdim=True)
+                
+                return text_features.cpu().numpy().flatten().tolist()
+        except Exception as e:
+            logger.error(f"Failed to embed text with SigLIP: {e}")
+            return [0.0] * 768
