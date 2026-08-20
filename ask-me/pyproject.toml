@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=61.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ask-me"
+version = "0.1.0"
+description = "RAG application package"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "pydantic-settings>=2.0.0",
+    "requests>=2.31.0",
+    "qdrant-client>=1.7.0",
+    "langgraph>=0.0.26",
+    "langchain-core>=0.1.0",
+    "pywin32>=306",
+    "transformers>=4.40.0",
+    "torch>=2.0.0",
+    "torchvision>=0.15.0",
+    "pillow>=10.0.0"
+]
+
+[project.scripts]
+ask-me = "ask_me.main:main"
+
+[tool.setuptools]
+include-package-data = true
+packages = ["ask_me"]

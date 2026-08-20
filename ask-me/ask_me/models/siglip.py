@@ -1,0 +1,45 @@
+import logging
+import torch
+from transformers import AutoProcessor, AutoModel
+from PIL import Image
+import io
+import base64
+
+logger = logging.getLogger(__name__)
+
+class SigLIPEncoder:
+    def __init__(self, model_id: str = "google/siglip-base-patch16-224"):
+        logger.info(f"Loading local SigLIP model '{model_id}' into memory...")
+        # Check if CUDA is available, otherwise fallback to CPU
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        logger.info(f"Using device: {self.device}")
+        
+        # Load processor and model. This requires downloading weights once during setup,
+        # but executes 100% locally and offline during runtime.
+        self.processor = AutoProcessor.from_pretrained(model_id)
+        self.model = AutoModel.from_pretrained(model_id).to(self.device)
+        self.model.eval()
+        logger.info("SigLIP model loaded successfully. Zero network calls will be made for embedding.")
+
+    def embed_base64_image(self, base64_data: str) -> list[float]:
+        """Decodes base64 image and returns the 768-dimensional SigLIP embedding."""
+        try:
+            if "," in base64_data:
+                base64_data = base64_data.split(",", 1)[1]
+            image_bytes = base64.b64decode(base64_data)
+            image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+            
+            with torch.no_grad():
+                inputs = self.processor(images=image, return_tensors="pt").to(self.device)
+                image_features = self.model.get_image_features(**inputs)
+                
+                # Normalize the embeddings for cosine similarity
+                image_features = image_features / image_features.norm(p=2, dim=-1, keepdim=True)
+                
+                # Convert to a flat python list of floats
+                embedding = image_features.cpu().numpy().flatten().tolist()
+                return embedding
+        except Exception as e:
+            logger.error(f"Failed to embed image with SigLIP: {e}")
+            # Return zeroed vector as fallback to not break Qdrant
+            return [0.0] * 768
