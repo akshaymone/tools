@@ -32,11 +32,12 @@ class Retriever:
         
         # 3. Retrieve Sections (Text only)
         logger.debug("Searching 'sections' collection.")
-        section_results = self.qdrant.search(
+        section_results = self.qdrant.query_points(
             collection_name="sections",
-            query_vector=("text", bge_query_vector),
+            query=bge_query_vector,
+            using="text",
             limit=top_k
-        )
+        ).points
         
         # 4. Retrieve Visuals using RRF (Reciprocal Rank Fusion)
         logger.debug("Searching 'visuals' collection using Prefetch RRF.")
