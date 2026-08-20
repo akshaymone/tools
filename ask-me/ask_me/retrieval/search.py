@@ -1,7 +1,6 @@
 import logging
 from typing import List, Dict, Any
-from qdrant_client import QdrantClient
-from qdrant_client.http.models import Filter, FieldCondition, MatchValue, Prefetch
+from qdrant_client import QdrantClient, models
 from ..config import settings
 from ..api_client import FMGatewayClient
 from ..models.siglip import SigLIPEncoder
@@ -45,12 +44,12 @@ class Retriever:
         
         # Flowchart Logic Prefetch (using BGE vector)
         visual_prefetches.append(
-            Prefetch(
+            models.Prefetch(
                 query=bge_query_vector,
                 using="logic",
                 limit=top_k,
-                filter=Filter(
-                    must=[FieldCondition(key="is_flowchart", match=MatchValue(value=True))]
+                filter=models.Filter(
+                    must=[models.FieldCondition(key="is_flowchart", match=models.MatchValue(value=True))]
                 )
             )
         )
@@ -58,7 +57,7 @@ class Retriever:
         # Visual/Image Prefetch (using SigLIP vector) if provided
         if siglip_query_vector:
             visual_prefetches.append(
-                Prefetch(
+                models.Prefetch(
                     query=siglip_query_vector,
                     using="image",
                     limit=top_k
@@ -68,7 +67,7 @@ class Retriever:
         visual_results = self.qdrant.query_points(
             collection_name="visuals",
             prefetch=visual_prefetches,
-            query=None, # None indicates pure RRF fusion of the prefetches
+            query=models.FusionQuery(fusion=models.Fusion.RRF),
             limit=top_k
         )
         
@@ -90,7 +89,7 @@ class Retriever:
                 # If we hit an image but didn't hit its parent text, fetch the parent text
                 parent_res = self.qdrant.scroll(
                     collection_name="sections",
-                    scroll_filter=Filter(must=[FieldCondition(key="section_id", match=MatchValue(value=parent_id))]),
+                    scroll_filter=models.Filter(must=[models.FieldCondition(key="section_id", match=models.MatchValue(value=parent_id))]),
                     limit=1
                 )[0]
                 if parent_res:
