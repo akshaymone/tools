@@ -60,6 +60,7 @@ class IndexingPipeline:
             buffered = BytesIO()
             image.save(buffered, format="JPEG")
             img_str = base64.b64encode(buffered.getvalue()).decode()
+            logger.debug(f"Encoded page {page_num} to base64 length: {len(img_str)}")
             
             points.append(PointStruct(
                 id=point_id,

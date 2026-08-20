@@ -34,9 +34,12 @@ def convert_to_pdf(input_path: str) -> str:
             word = win32com.client.DispatchEx("Word.Application")
             word.Visible = False
             try:
+                logger.debug(f"Opening Word document: {input_path}")
                 doc = word.Documents.Open(str(input_path))
+                logger.debug(f"Saving Word document as PDF: {output_path}")
                 doc.SaveAs(str(output_path), FileFormat=17) # 17 is wdFormatPDF
                 doc.Close()
+                logger.debug(f"Closed Word document: {input_path}")
             finally:
                 word.Quit()
                 

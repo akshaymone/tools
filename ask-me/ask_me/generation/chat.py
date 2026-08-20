@@ -87,6 +87,7 @@ class ChatAgent:
             api_messages.append({"role": role, "content": content})
             
         logger.info("Calling VLM for final generation...")
+        logger.debug(f"API Messages Payload: {api_messages}")
         response_text = self.api.chat_completion(messages=api_messages)
         
         return {"messages": [AIMessage(content=response_text)]}

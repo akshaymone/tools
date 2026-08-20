@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     # Ingestion Settings
     index_directory: str = os.getenv("INDEX_DIRECTORY", "./data")
     
+    # Logging
+    debug_log: bool = str(os.getenv("DEBUG_LOG", "False")).lower() in ("true", "1", "yes")
+    
     class Config:
         env_file = ".env"
 

@@ -38,8 +38,10 @@ class VisionRetriever:
             return []
             
         inputs = self.processor.process_images(images).to(self.device)
+        logger.debug(f"Computed inputs for {len(images)} images on {self.device}.")
         with torch.no_grad():
             embeddings = self.model(**inputs)
+            logger.debug(f"Generated embeddings shape: {embeddings.shape}")
             
         # embeddings shape: (batch_size, num_patches, dim)
         return embeddings.cpu().float().numpy().tolist()

@@ -10,7 +10,8 @@ from .api_client import FMGatewayClient
 from .generation.chat import ChatAgent
 
 # Setup logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+log_level = logging.DEBUG if settings.debug_log else logging.INFO
+logging.basicConfig(level=log_level, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 def ingest():

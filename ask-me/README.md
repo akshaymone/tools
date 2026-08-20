@@ -74,8 +74,9 @@ VISION_RETRIEVER_MODEL="vidore/colSmol-500M"
 QDRANT_HOST="localhost"
 QDRANT_PORT="6333"
 
-# Ingestion
+# Ingestion Settings
 INDEX_DIRECTORY="C:/Path/To/Your/Documents"
+DEBUG_LOG="False"
 ```
 
 ---
