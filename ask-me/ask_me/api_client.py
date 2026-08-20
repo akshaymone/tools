@@ -1,7 +1,11 @@
 import requests
+import urllib3
 import logging
 from typing import Dict, Any, List
 from .config import settings
+
+# Suppress insecure request warnings for internal enterprise APIs
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +29,7 @@ class FMGatewayClient:
                 "force_ocr": "false"
             }
             logger.debug(f"POST {url} with data: {data}")
-            response = requests.post(url, headers=self.headers, files=files, data=data)
+            response = requests.post(url, headers=self.headers, files=files, data=data, verify=settings.fm_gateway_verify_ssl)
             logger.debug(f"Response Status: {response.status_code}")
             response.raise_for_status()
             result = response.json()
@@ -41,7 +45,7 @@ class FMGatewayClient:
         }
         headers = {**self.headers, "Content-Type": "application/json"}
         logger.debug(f"POST {url} | Model: {payload['model']} | Text snippet: {text[:50]}...")
-        response = requests.post(url, headers=headers, json=payload)
+        response = requests.post(url, headers=headers, json=payload, verify=settings.fm_gateway_verify_ssl)
         logger.debug(f"Response Status: {response.status_code}")
         response.raise_for_status()
         return response.json()["data"][0]["embedding"]
@@ -57,7 +61,7 @@ class FMGatewayClient:
         }
         headers = {**self.headers, "Content-Type": "application/json"}
         logger.debug(f"POST {url} | Model: {payload['model']} | Max Tokens: {max_tokens}")
-        response = requests.post(url, headers=headers, json=payload)
+        response = requests.post(url, headers=headers, json=payload, verify=settings.fm_gateway_verify_ssl)
         logger.debug(f"Response Status: {response.status_code}")
         
         if response.status_code != 200:

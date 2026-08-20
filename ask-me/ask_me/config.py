@@ -5,6 +5,7 @@ class Settings(BaseSettings):
     # API Settings
     fm_gateway_url: str = os.getenv("FM_GATEWAY_URL", "")
     fm_gateway_token: str = os.getenv("FM_GATEWAY_TOKEN", "")
+    fm_gateway_verify_ssl: bool = str(os.getenv("FM_GATEWAY_VERIFY_SSL", "False")).lower() in ("true", "1", "yes")
     
     # Models
     embedding_model: str = os.getenv("EMBEDDING_MODEL", "BAAI/bge-m3") 
