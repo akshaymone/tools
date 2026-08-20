@@ -10,6 +10,7 @@ logger = logging.getLogger(__name__)
 class AgentState(TypedDict):
     messages: Sequence[BaseMessage]
     context: str
+    retrieved_images: List[str]
 
 class ChatAgent:
     def __init__(self):
@@ -51,6 +52,7 @@ class ChatAgent:
         
         # Format the context
         context_str = "--- RETRIEVED KNOWLEDGE ---\n"
+        retrieved_images = []
         for i, res in enumerate(results):
             # Include the filename (doc_id) to prevent cross-document hallucination
             doc_source = res.get("doc_id", "Unknown Document")
@@ -58,23 +60,35 @@ class ChatAgent:
             for vis in res.get("visuals", []):
                 if vis.get("flowchart_description"):
                     context_str += f"[Flowchart Context from {doc_source}]: {vis['flowchart_description']}\n"
+                if vis.get("base64"):
+                    retrieved_images.append(vis["base64"])
             context_str += "\n"
             
-        return {"context": context_str}
+        return {"context": context_str, "retrieved_images": retrieved_images}
 
     def generate_node(self, state: AgentState) -> dict:
         """Generates the final response using the VLM via FM Gateway."""
-        system_prompt = SystemMessage(
-            content=f"You are a helpful technical assistant. Use the following retrieved context to answer the user's question accurately.\n\n{state['context']}"
-        )
+        system_prompt = f"You are a helpful technical assistant. Use the following retrieved context to answer the user's question accurately.\n\n{state['context']}"
         
-        # Convert LangChain messages to the dictionary format expected by FM Gateway
-        api_messages = []
-        for msg in [system_prompt] + list(state["messages"]):
+        api_messages = [{"role": "system", "content": system_prompt}]
+        
+        for idx, msg in enumerate(state["messages"]):
             role = "user" if isinstance(msg, HumanMessage) else "assistant"
-            if isinstance(msg, SystemMessage):
-                role = "system"
-            api_messages.append({"role": role, "content": msg.content})
+            content = msg.content
+            
+            # If this is the LAST user message, attach retrieved images so the VLM can literally see them
+            if role == "user" and idx == len(state["messages"]) - 1 and state.get("retrieved_images"):
+                if isinstance(content, str):
+                    content = [{"type": "text", "text": content}]
+                elif isinstance(content, list):
+                    content = list(content) # shallow copy
+                
+                # Append up to 3 retrieved images to prevent token limits
+                for b64 in state["retrieved_images"][:3]:
+                    logger.info("Injecting a retrieved image directly into VLM prompt.")
+                    content.append({"type": "image_url", "image_url": {"url": b64}})
+            
+            api_messages.append({"role": role, "content": content})
             
         logger.info("Calling VLM for final generation...")
         response_text = self.api.chat_completion(messages=api_messages)
