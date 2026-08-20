@@ -42,8 +42,11 @@ def ingest():
                     # 3. Embed and Index using Vision Retriever
                     pipeline.index_document_pages(filepath.name, page_images)
                     
+                    
                 except Exception as e:
                     logger.error(f"Failed to ingest {filepath.name}: {e}")
+                    
+    logger.info("All documents in the index directory have been ingested successfully!")
 
 def chat():
     """Starts the interactive CLI chat."""
