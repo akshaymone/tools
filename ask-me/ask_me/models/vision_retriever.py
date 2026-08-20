@@ -2,7 +2,7 @@ import torch
 import logging
 from typing import List
 from PIL import Image
-from colpali_engine.models import ColPali, ColPaliProcessor
+from colpali_engine.models import ColIdefics3, ColIdefics3Processor
 from ..config import settings
 
 logger = logging.getLogger(__name__)
@@ -19,8 +19,8 @@ class VisionRetriever:
     def _init_model(self):
         logger.info(f"Loading Vision Retriever Model: {settings.vision_retriever_model}")
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.processor = ColPaliProcessor.from_pretrained(settings.vision_retriever_model)
-        self.model = ColPali.from_pretrained(
+        self.processor = ColIdefics3Processor.from_pretrained(settings.vision_retriever_model)
+        self.model = ColIdefics3.from_pretrained(
             settings.vision_retriever_model,
             torch_dtype=torch.bfloat16,
             device_map=self.device
