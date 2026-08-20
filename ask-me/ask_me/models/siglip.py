@@ -16,10 +16,18 @@ class SigLIPEncoder:
         
         # Load processor and model. This requires downloading weights once during setup,
         # but executes 100% locally and offline during runtime.
-        self.processor = AutoProcessor.from_pretrained(model_id)
-        self.model = AutoModel.from_pretrained(model_id).to(self.device)
+        # Try to load strictly from local cache first to prevent HF network pings
+        try:
+            self.processor = AutoProcessor.from_pretrained(model_id, local_files_only=True)
+            self.model = AutoModel.from_pretrained(model_id, local_files_only=True).to(self.device)
+            logger.info("SigLIP model loaded strictly from local offline cache. Zero public network calls made.")
+        except Exception:
+            logger.info("Local model not found in cache. Connecting to Hugging Face for one-time download...")
+            self.processor = AutoProcessor.from_pretrained(model_id)
+            self.model = AutoModel.from_pretrained(model_id).to(self.device)
+            logger.info("SigLIP model downloaded and cached successfully.")
+            
         self.model.eval()
-        logger.info("SigLIP model loaded successfully. Zero network calls will be made for embedding.")
 
     def embed_base64_image(self, base64_data: str) -> list[float]:
         """Decodes base64 image and returns the 768-dimensional SigLIP embedding."""
