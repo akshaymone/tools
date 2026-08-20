@@ -32,6 +32,14 @@ class IndexingPipeline:
                 )
             )
             
+    def is_document_indexed(self, doc_name: str) -> bool:
+        """Checks if the document has already been indexed by looking for its page 1 ID."""
+        if not self.qdrant.collection_exists(self.pages_col):
+            return False
+        point_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{doc_name}_page_1"))
+        result = self.qdrant.retrieve(collection_name=self.pages_col, ids=[point_id])
+        return len(result) > 0
+
     def index_document_pages(self, doc_name: str, page_images: List[Any]):
         """
         Takes page images, embeds them with VisionRetriever, and pushes to Qdrant.

@@ -27,6 +27,10 @@ def ingest():
         if filepath.is_file():
             ext = filepath.suffix.lower()
             if ext in [".pdf", ".docx", ".pptx"]:
+                if pipeline.is_document_indexed(filepath.name):
+                    logger.info(f"Document {filepath.name} is already indexed. Skipping.")
+                    continue
+                    
                 logger.info(f"Processing file: {filepath.name}")
                 try:
                     # 1. Ensure it's a PDF (convert if DOCX/PPTX)
