@@ -34,9 +34,13 @@ def ingest():
                     pdf_path = convert_to_pdf(str(filepath))
                     doc_response = api.extract_document(pdf_path)
                     
-                    # Assuming extraction API returns {"markdown": "..."} or similar
-                    # For safety we get whatever text/markdown string is in the dict
-                    md_text = doc_response.get("markdown") or doc_response.get("text") or str(doc_response)
+
+                    # Extract the markdown string from the nested API response
+                    md_text = doc_response.get("document", {}).get("md_content", "")
+                    
+                    if not md_text:
+                        logger.warning(f"No md_content found for {filepath.name}, skipping.")
+                        continue
                     
                     # Save markdown to disk for debugging purposes
                     debug_md_path = filepath.with_suffix('.extracted.md')
