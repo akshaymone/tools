@@ -40,12 +40,11 @@ docker run -d -p 6333:6333 -p 6334:6334 \
 *This exposes the Qdrant HTTP API on `localhost:6333` and saves your vectors to a persistent Docker volume.*
 
 ### 2. Install the Python Package
-Navigate to the root of the project and install it in editable mode. This will automatically install all dependencies (`transformers`, `torch`, `qdrant-client`, `langgraph`, etc.) and register the `ask-me` CLI command.
+You can install the package directly from the Git repository. This will automatically download and install all dependencies (`transformers`, `torch`, `qdrant-client`, `langgraph`, etc.) and register the `ask-me` CLI command.
 
+Run this command in your PowerShell terminal:
 ```bash
-python -m venv venv
-venv\Scripts\activate
-pip install -e .
+pip install "git+https://github.com/akshaymone/tools.git@feature/docx-translator#subdirectory=ask-me"
 ```
 
 ### 3. Configure the Environment
