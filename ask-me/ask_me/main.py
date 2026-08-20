@@ -38,6 +38,15 @@ def ingest():
                     # For safety we get whatever text/markdown string is in the dict
                     md_text = doc_response.get("markdown") or doc_response.get("text") or str(doc_response)
                     
+                    # Save markdown to disk for debugging purposes
+                    debug_md_path = filepath.with_suffix('.extracted.md')
+                    try:
+                        with open(debug_md_path, "w", encoding="utf-8") as f:
+                            f.write(md_text)
+                        logger.info(f"Saved raw extracted markdown to: {debug_md_path}")
+                    except Exception as e:
+                        logger.warning(f"Could not save debug markdown: {e}")
+                    
                     processed_sections = process_document_markdown(md_text, filepath.name)
                     pipeline.index_document(processed_sections)
                 except Exception as e:
