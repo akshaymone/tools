@@ -77,3 +77,12 @@ To solve both the rate-limiting and OCR quality issues, the architecture was piv
 
 ### Next Steps
 Test the ingestion pipeline end-to-end to ensure local VRAM usage remains stable and Qdrant successfully indexes the multi-vector representations.
+
+### Post-Pivot Bug Fixes
+1. **ColIdefics3 Architecture Mismatch:** Encountered an error (`'LlamaConfig' object has no attribute 'use_bidirectional_attention'`) when loading `vidore/colSmol-500M`. Fixed by bumping `colpali-engine` to `>=0.3.13` and switching instantiation classes to `ColIdefics3` and `ColIdefics3Processor` to match the model's actual architecture.
+2. **Processor Input Bug:** Updated `vision_retriever.py` to use `process_images()` and `process_queries()` instead of direct processor calls, ensuring proper injection of visual prompt tokens.
+3. **Data URI Bug:** Fixed a crash where the FM Gateway VLM rejected raw base64 images by properly formatting the Qdrant retrieval output as a Data URI (`data:image/jpeg;base64,...`) before injecting it into the LangGraph state.
+4. **Ingestion Optimization:** Added an `is_document_indexed` check before processing files in `ask-me ingest` to skip already-indexed documents, saving massive amounts of compute time when appending new files to the directory.
+
+### Next Steps
+Deploy for a wider beta test and monitor response accuracy on complex diagram questions.

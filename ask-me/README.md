@@ -6,10 +6,10 @@ This pipeline respects a tight 4GB VRAM constraint by offloading large model inf
 
 ## Architecture Highlights
 - **Document Ingestion:** Recursively crawls directories. Uses native Windows COM (`win32com`) to perfectly convert `.docx` and `.pptx` to PDF entirely offline without formatting loss.
-- **Extraction & OCR:** Sends PDFs to the FM Gateway for Markdown conversion. Automatically applies Windows native PowerShell OCR to images as a fallback to catch hidden text.
-- **Dual Vector Storage:** Runs Qdrant locally via Docker. Uses two collections: `sections` (text chunks) and `visuals` (images).
-- **Embeddings:** Text is embedded using the `bge-m3` model via the API. Images are embedded locally using `google/siglip-base-patch16-224`.
-- **Chat Agent:** Powered by LangGraph to maintain chat history and seamlessly route context to the `gemma-4-31B-it` Vision-Language Model.
+- **Page-Level Vision-RAG:** Converts every PDF page into a high-resolution image snapshot using `pdf2image`. This completely bypasses error-prone text extraction and OCR steps!
+- **Multi-Vector Storage:** Runs Qdrant locally via Docker, using a single `vision_pages` collection that supports MultiVector MAX_SIM distance.
+- **Local Vision Embeddings:** Page images and user queries are embedded locally using the lightweight `vidore/colSmol-500M` model. At ~500M parameters, it comfortably runs within the 4GB VRAM constraint.
+- **Chat Agent:** Powered by LangGraph. When asking a question, it retrieves the most relevant page snapshots from Qdrant and sends the raw images directly to the `gemma-4-31B-it` Vision-Language Model via the FM Gateway for grounded answering.
 
 ---
 
@@ -67,8 +67,8 @@ FM_GATEWAY_URL="https://fmgateway.proxem.dsone.3ds.com"
 FM_GATEWAY_TOKEN="your_auth_token_here"
 
 # Models
-EMBEDDING_MODEL="BAAI/bge-m3"
 VLM_MODEL="google/gemma-4-31B-it"
+VISION_RETRIEVER_MODEL="vidore/colSmol-500M"
 
 # Local Qdrant
 QDRANT_HOST="localhost"
@@ -85,12 +85,12 @@ INDEX_DIRECTORY="C:/Path/To/Your/Documents"
 Once installed, the package exposes the `ask-me` command globally in your virtual environment.
 
 ### Step 1: Ingest Documents
-To crawl your `INDEX_DIRECTORY`, convert files, run OCR, extract metadata, generate embeddings, and store them in Qdrant, simply run:
+To crawl your `INDEX_DIRECTORY`, convert files, render page images, generate local vision embeddings, and store them in Qdrant, simply run:
 
 ```bash
 ask-me ingest
 ```
-*Note: The first time you run this, it will take a moment to download the `< 1GB` local SigLIP model weights from HuggingFace to your cache.*
+*Note: The first time you run this, it will take a moment to download the `< 1GB` local ColSmol model weights from HuggingFace to your cache.*
 
 ### Step 2: Chat with your Documents
 To launch the interactive LangGraph agent and ask questions against your indexed documents:
