@@ -52,10 +52,12 @@ class ChatAgent:
         # Format the context
         context_str = "--- RETRIEVED KNOWLEDGE ---\n"
         for i, res in enumerate(results):
-            context_str += f"Section {i+1}:\n{res['text']}\n"
-            for vis in res["visuals"]:
+            # Include the filename (doc_id) to prevent cross-document hallucination
+            doc_source = res.get("doc_id", "Unknown Document")
+            context_str += f"--- Source: {doc_source} ---\n{res['text']}\n"
+            for vis in res.get("visuals", []):
                 if vis.get("flowchart_description"):
-                    context_str += f"[Flowchart Context]: {vis['flowchart_description']}\n"
+                    context_str += f"[Flowchart Context from {doc_source}]: {vis['flowchart_description']}\n"
             context_str += "\n"
             
         return {"context": context_str}

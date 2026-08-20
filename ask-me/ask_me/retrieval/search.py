@@ -77,7 +77,11 @@ class Retriever:
         for res in section_results:
             sec_id = res.payload["section_id"]
             if sec_id not in merged_context:
-                merged_context[sec_id] = {"text": res.payload["text"], "visuals": []}
+                merged_context[sec_id] = {
+                    "doc_id": res.payload.get("doc_id", "Unknown"), 
+                    "text": res.payload["text"], 
+                    "visuals": []
+                }
                 
         for res in visual_results.points:
             parent_id = res.payload["parent_section_id"]
@@ -89,7 +93,11 @@ class Retriever:
                     limit=1
                 )[0]
                 if parent_res:
-                    merged_context[parent_id] = {"text": parent_res[0].payload["text"], "visuals": []}
+                    merged_context[parent_id] = {
+                        "doc_id": parent_res[0].payload.get("doc_id", "Unknown"),
+                        "text": parent_res[0].payload["text"], 
+                        "visuals": []
+                    }
             
             if parent_id in merged_context:
                 merged_context[parent_id]["visuals"].append(res.payload)
