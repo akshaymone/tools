@@ -37,7 +37,7 @@ class VisionRetriever:
         if not images:
             return []
             
-        inputs = self.processor(images=images, return_tensors="pt").to(self.device)
+        inputs = self.processor.process_images(images).to(self.device)
         with torch.no_grad():
             embeddings = self.model(**inputs)
             
@@ -49,7 +49,7 @@ class VisionRetriever:
         Embeds a text query into a multi-vector representation.
         Returns a single multi-vector (list of token embeddings).
         """
-        inputs = self.processor(text=query, return_tensors="pt").to(self.device)
+        inputs = self.processor.process_queries([query]).to(self.device)
         with torch.no_grad():
             embeddings = self.model(**inputs)
             
