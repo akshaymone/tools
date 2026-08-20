@@ -59,6 +59,12 @@ class SigLIPEncoder:
                 inputs = self.processor(text=text, padding="max_length", truncation=True, return_tensors="pt").to(self.device)
                 text_features = self.model.get_text_features(**inputs)
                 
+                # Handle older/different transformers versions that return an output object instead of a tensor
+                if hasattr(text_features, "pooler_output"):
+                    text_features = text_features.pooler_output
+                elif isinstance(text_features, tuple):
+                    text_features = text_features[0] if isinstance(text_features[0], torch.Tensor) and text_features[0].dim() == 2 else text_features[1]
+                
                 # Normalize the embeddings for cosine similarity
                 text_features = text_features / text_features.norm(p=2, dim=-1, keepdim=True)
                 
