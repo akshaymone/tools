@@ -82,7 +82,7 @@ class ChatAgent:
                 # Append up to 3 retrieved images to prevent token limits
                 for b64 in state["retrieved_images"][:3]:
                     logger.info("Injecting a retrieved image directly into VLM prompt.")
-                    content.append({"type": "image_url", "image_url": {"url": b64}})
+                    content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}})
             
             api_messages.append({"role": role, "content": content})
             
