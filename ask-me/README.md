@@ -24,6 +24,10 @@ This pipeline respects a tight 4GB VRAM constraint by offloading large model inf
      winget install Docker.DockerDesktop
      ```
      *(Note: You will need to restart your computer and open Docker Desktop once to accept the terms before running containers).*
+5. **Poppler** (Required by `pdf2image` to convert PDFs into page images)
+   - **Windows:** Download the latest `Release-xx.xx.x-0.zip` from [poppler-windows](https://github.com/oschwartz10612/poppler-windows/releases/), extract it, and add the `Library/bin` or `poppler-xx/bin` folder to your system `PATH`.
+   - **Mac:** `brew install poppler`
+   - **Linux:** `sudo apt-get install poppler-utils`
 
 ---
 
