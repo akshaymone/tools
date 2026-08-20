@@ -1,5 +1,5 @@
 import logging
-from typing import TypedDict, Annotated, Sequence, Dict, Any
+from typing import TypedDict, Annotated, Sequence, Dict, Any, List
 from langgraph.graph import StateGraph, START, END
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, SystemMessage
 from ..api_client import FMGatewayClient
