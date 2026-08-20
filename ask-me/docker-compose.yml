@@ -9,7 +9,7 @@ services:
     environment:
       - QDRANT__TELEMETRY_DISABLED=true
     volumes:
-      - qdrant_storage:/qdrant/storage
-
-volumes:
-  qdrant_storage:
+      # To save C:\ drive space, this bind mount saves data directly to a folder 
+      # next to this docker-compose file. You can also change './qdrant_data' 
+      # to an absolute path on another drive, for example: 'D:/my_qdrant_data'
+      - ./qdrant_data:/qdrant/storage

@@ -30,15 +30,21 @@ This pipeline respects a tight 4GB VRAM constraint by offloading large model inf
 ## Setup Instructions
 
 ### 1. Start Qdrant (Local Vector Database)
-We use Qdrant to store vectors locally. Start a Qdrant container using Docker:
+We use Qdrant to store vectors locally. We have provided a `docker-compose.yml` file to make this easy and secure.
+
+**Storage Warning (Saving your C:\ Drive):** 
+By default, Docker saves data inside its own virtual machine on your C:\ drive. To prevent this, our configuration uses a **Bind Mount**. It will create a folder called `qdrant_data` directly inside this project folder. 
+*If you want to store the data on an entirely different drive, open `docker-compose.yml` and change `./qdrant_data` to something like `D:/qdrant_data` before running the command below.*
+
+**Step-by-step:**
+1. Open PowerShell.
+2. Use the `cd` command to navigate to the `ask-me` directory (where the `docker-compose.yml` file is located).
+3. Run the following command to start the database in the background:
 
 ```bash
-docker run -d -p 127.0.0.1:6333:6333 -p 127.0.0.1:6334:6334 \
-  -e QDRANT__TELEMETRY_DISABLED=true \
-  -v qdrant_storage:/qdrant/storage:z \
-  qdrant/qdrant
+docker-compose up -d
 ```
-*This exposes the Qdrant HTTP API on `localhost:6333` and saves your vectors to a persistent Docker volume.*
+*(To stop the database later, run `docker-compose down` from the same folder).*
 
 ### 2. Install the Python Package
 You can install the package directly from the Git repository. This will automatically download and install all dependencies (`transformers`, `torch`, `qdrant-client`, `langgraph`, etc.) and register the `ask-me` CLI command.
