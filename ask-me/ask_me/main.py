@@ -4,8 +4,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from .config import settings
-from .ingestion.converter import convert_to_pdf
-from .ingestion.chunker import process_document_markdown
+from .ingestion.converter import convert_to_pdf, extract_page_images
 from .indexing.pipeline import IndexingPipeline
 from .api_client import FMGatewayClient
 from .generation.chat import ChatAgent
@@ -15,9 +14,8 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 logger = logging.getLogger(__name__)
 
 def ingest():
-    """Crawls the index directory and ingests everything."""
-    logger.info(f"Starting ingestion process on {settings.index_directory}...")
-    api = FMGatewayClient()
+    """Crawls the index directory and ingests documents using Vision-RAG (ColPali)."""
+    logger.info(f"Starting Vision-RAG ingestion on {settings.index_directory}...")
     pipeline = IndexingPipeline()
     
     path = Path(settings.index_directory).resolve()
@@ -31,28 +29,19 @@ def ingest():
             if ext in [".pdf", ".docx", ".pptx"]:
                 logger.info(f"Processing file: {filepath.name}")
                 try:
+                    # 1. Ensure it's a PDF (convert if DOCX/PPTX)
                     pdf_path = convert_to_pdf(str(filepath))
-                    doc_response = api.extract_document(pdf_path)
                     
-
-                    # Extract the markdown string from the nested API response
-                    md_text = doc_response.get("document", {}).get("md_content", "")
+                    # 2. Extract page images
+                    page_images = extract_page_images(pdf_path)
                     
-                    if not md_text:
-                        logger.warning(f"No md_content found for {filepath.name}, skipping.")
+                    if not page_images:
+                        logger.warning(f"No pages extracted for {filepath.name}, skipping.")
                         continue
                     
-                    # Save markdown to disk for debugging purposes
-                    debug_md_path = filepath.with_suffix('.extracted.md')
-                    try:
-                        with open(debug_md_path, "w", encoding="utf-8") as f:
-                            f.write(md_text)
-                        logger.info(f"Saved raw extracted markdown to: {debug_md_path}")
-                    except Exception as e:
-                        logger.warning(f"Could not save debug markdown: {e}")
+                    # 3. Embed and Index using Vision Retriever
+                    pipeline.index_document_pages(filepath.name, page_images)
                     
-                    processed_sections = process_document_markdown(md_text, filepath.name)
-                    pipeline.index_document(processed_sections)
                 except Exception as e:
                     logger.error(f"Failed to ingest {filepath.name}: {e}")
 

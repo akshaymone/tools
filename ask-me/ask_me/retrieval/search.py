@@ -2,118 +2,43 @@ import logging
 from typing import List, Dict, Any
 from qdrant_client import QdrantClient, models
 from ..config import settings
-from ..api_client import FMGatewayClient
-from ..models.siglip import SigLIPEncoder
+from ..models.vision_retriever import VisionRetriever
 
 logger = logging.getLogger(__name__)
 
 class Retriever:
     def __init__(self):
         self.qdrant = QdrantClient(host=settings.qdrant_host, port=settings.qdrant_port)
-        self.api = FMGatewayClient()
-        self.siglip = SigLIPEncoder()
+        self.vision = VisionRetriever()
+        self.pages_col = "vision_pages"
         
-    def search(self, query: str, query_image_base64: str = None, top_k: int = 5) -> List[Dict[str, Any]]:
+    def search(self, query: str, top_k: int = 5) -> List[Dict[str, Any]]:
         """
-        Executes a dual-embedding search with Qdrant Reciprocal Rank Fusion (RRF).
-        Embeds the query text using BGE (for sections and logic) and SigLIP (for images).
+        Executes a MultiVector (ColBERT-style) search against the vision_pages collection.
+        Returns the most relevant page images.
         """
-        logger.info(f"Executing retrieval for query: '{query}'")
+        logger.info(f"Executing Vision-RAG retrieval for query: '{query}'")
         
-        # 1. Embed Query Text (BGE space for sections and flowchart logic)
-        bge_query_vector = self.api.get_embeddings(query)
+        # 1. Embed Query Text into MultiVector
+        query_multi_vector = self.vision.embed_query(query)
         
-        # 1.5 Embed Query Text (SigLIP space for zero-shot image retrieval)
-        logger.debug("Embedding query text via SigLIP text tower for cross-modal search.")
-        siglip_text_query_vector = self.siglip.embed_text(query)
-        
-        # 2. Embed Query Image (SigLIP space for visual search)
-        siglip_image_query_vector = None
-        if query_image_base64:
-            logger.info("Image provided in query. Embedding via local SigLIP.")
-            siglip_image_query_vector = self.siglip.embed_base64_image(query_image_base64)
-        
-        # 3. Retrieve Sections (Text only)
-        logger.debug("Searching 'sections' collection.")
-        section_results = self.qdrant.query_points(
-            collection_name="sections",
-            query=bge_query_vector,
-            using="text",
+        # 2. Search Qdrant
+        logger.debug(f"Searching '{self.pages_col}' collection.")
+        results = self.qdrant.query_points(
+            collection_name=self.pages_col,
+            query=query_multi_vector,
             limit=top_k
         ).points
         
-        # 4. Retrieve Visuals using RRF (Reciprocal Rank Fusion)
-        logger.debug("Searching 'visuals' collection using Prefetch RRF.")
-        visual_prefetches = []
-        
-        # Flowchart Logic Prefetch (using BGE vector)
-        visual_prefetches.append(
-            models.Prefetch(
-                query=bge_query_vector,
-                using="logic",
-                limit=top_k,
-                filter=models.Filter(
-                    must=[models.FieldCondition(key="is_flowchart", match=models.MatchValue(value=True))]
-                )
-            )
-        )
-        
-        # Visual Prefetch (using SigLIP Text vector to find matching images)
-        visual_prefetches.append(
-            models.Prefetch(
-                query=siglip_text_query_vector,
-                using="image",
-                limit=top_k
-            )
-        )
-        
-        # Visual/Image Prefetch (using SigLIP Image vector) if user uploaded an image
-        if siglip_image_query_vector:
-            visual_prefetches.append(
-                models.Prefetch(
-                    query=siglip_image_query_vector,
-                    using="image",
-                    limit=top_k
-                )
-            )
+        # 3. Format results
+        formatted_results = []
+        for res in results:
+            formatted_results.append({
+                "doc_name": res.payload.get("doc_name", "Unknown"),
+                "page_number": res.payload.get("page_number", 0),
+                "base64": res.payload.get("image_base64", ""),
+                "score": res.score
+            })
             
-        visual_results = self.qdrant.query_points(
-            collection_name="visuals",
-            prefetch=visual_prefetches,
-            query=models.FusionQuery(fusion=models.Fusion.RRF),
-            limit=top_k
-        )
-        
-        # 5. Merge and Group by Parent Section
-        merged_context = {}
-        
-        for res in section_results:
-            sec_id = res.payload["section_id"]
-            if sec_id not in merged_context:
-                merged_context[sec_id] = {
-                    "doc_id": res.payload.get("doc_id", "Unknown"), 
-                    "text": res.payload["text"], 
-                    "visuals": []
-                }
-                
-        for res in visual_results.points:
-            parent_id = res.payload["parent_section_id"]
-            if parent_id not in merged_context:
-                # If we hit an image but didn't hit its parent text, fetch the parent text
-                parent_res = self.qdrant.scroll(
-                    collection_name="sections",
-                    scroll_filter=models.Filter(must=[models.FieldCondition(key="section_id", match=models.MatchValue(value=parent_id))]),
-                    limit=1
-                )[0]
-                if parent_res:
-                    merged_context[parent_id] = {
-                        "doc_id": parent_res[0].payload.get("doc_id", "Unknown"),
-                        "text": parent_res[0].payload["text"], 
-                        "visuals": []
-                    }
-            
-            if parent_id in merged_context:
-                merged_context[parent_id]["visuals"].append(res.payload)
-                
-        logger.info(f"Retrieved {len(merged_context)} distinct contextual sections.")
-        return list(merged_context.values())
+        logger.info(f"Retrieved {len(formatted_results)} relevant pages.")
+        return formatted_results

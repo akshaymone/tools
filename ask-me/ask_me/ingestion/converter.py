@@ -59,3 +59,11 @@ def convert_to_pdf(input_path: str) -> str:
         pythoncom.CoUninitialize()
         
     return str(output_path)
+
+def extract_page_images(pdf_path: str):
+    """
+    Converts a PDF file into a list of PIL Images (one per page).
+    """
+    from pdf2image import convert_from_path
+    logger.info(f"Rendering pages from PDF to images: {pdf_path}")
+    return convert_from_path(pdf_path)

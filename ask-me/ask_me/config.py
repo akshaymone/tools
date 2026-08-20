@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     # Models
     embedding_model: str = os.getenv("EMBEDDING_MODEL", "BAAI/bge-m3") 
     vlm_model: str = os.getenv("VLM_MODEL", "google/gemma-4-31B-it")
+    vision_retriever_model: str = os.getenv("VISION_RETRIEVER_MODEL", "vidore/colSmol-500M")
     
     # Qdrant
     qdrant_host: str = os.getenv("QDRANT_HOST", "localhost")

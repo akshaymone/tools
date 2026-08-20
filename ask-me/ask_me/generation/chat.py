@@ -35,33 +35,29 @@ class ChatAgent:
         
         # Check if the message contains an image (multimodal query)
         query_text = ""
-        query_image = None
         
         if isinstance(latest_msg, list):
             for part in latest_msg:
                 if part.get("type") == "text":
                     query_text = part["text"]
-                elif part.get("type") == "image_url":
-                    # Remove the data URI prefix for the retriever
-                    query_image = part["image_url"]["url"].split(",", 1)[-1]
         else:
             query_text = str(latest_msg)
             
         logger.info(f"Extracting context for user message: {query_text[:50]}...")
-        results = self.retriever.search(query=query_text, query_image_base64=query_image)
+        results = self.retriever.search(query=query_text)
         
         # Format the context
         context_str = "--- RETRIEVED KNOWLEDGE ---\n"
+        context_str += "The following are exact visual snapshots of the most relevant pages retrieved from the document corpus.\n"
         retrieved_images = []
         for i, res in enumerate(results):
-            # Include the filename (doc_id) to prevent cross-document hallucination
-            doc_source = res.get("doc_id", "Unknown Document")
-            context_str += f"--- Source: {doc_source} ---\n{res['text']}\n"
-            for vis in res.get("visuals", []):
-                if vis.get("flowchart_description"):
-                    context_str += f"[Flowchart Context from {doc_source}]: {vis['flowchart_description']}\n"
-                if vis.get("base64"):
-                    retrieved_images.append(vis["base64"])
+            # Include the filename and page number to prevent hallucination
+            doc_source = res.get("doc_name", "Unknown Document")
+            page = res.get("page_number", "?")
+            context_str += f"--- Source: {doc_source} (Page {page}) ---\n"
+            
+            if res.get("base64"):
+                retrieved_images.append(res["base64"])
             context_str += "\n"
             
         return {"context": context_str, "retrieved_images": retrieved_images}
