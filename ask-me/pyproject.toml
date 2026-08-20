@@ -26,4 +26,7 @@ ask-me = "ask_me.main:main"
 
 [tool.setuptools]
 include-package-data = true
-packages = ["ask_me"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["ask_me*"]
