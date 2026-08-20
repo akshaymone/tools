@@ -33,7 +33,8 @@ This pipeline respects a tight 4GB VRAM constraint by offloading large model inf
 We use Qdrant to store vectors locally. Start a Qdrant container using Docker:
 
 ```bash
-docker run -d -p 6333:6333 -p 6334:6334 \
+docker run -d -p 127.0.0.1:6333:6333 -p 127.0.0.1:6334:6334 \
+  -e QDRANT__TELEMETRY_DISABLED=true \
   -v qdrant_storage:/qdrant/storage:z \
   qdrant/qdrant
 ```
