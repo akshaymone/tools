@@ -13,7 +13,13 @@ logger = logging.getLogger(__name__)
 class IndexingPipeline:
     def __init__(self):
         logger.info(f"Initializing Qdrant client at {settings.qdrant_host}:{settings.qdrant_port}")
-        self.qdrant = QdrantClient(host=settings.qdrant_host, port=settings.qdrant_port)
+        logger.debug("If the script appears stuck here, it is waiting for Qdrant to respond. Please ensure your Docker container is running.")
+        try:
+            self.qdrant = QdrantClient(host=settings.qdrant_host, port=settings.qdrant_port, timeout=10.0)
+            logger.debug("QdrantClient object created successfully.")
+        except Exception as e:
+            logger.error(f"Failed to initialize QdrantClient. Is Docker running? Error: {e}")
+            raise
         self.pages_col = "vision_pages"
         self._ensure_collections()
         
@@ -40,11 +46,11 @@ class IndexingPipeline:
         result = self.qdrant.retrieve(collection_name=self.pages_col, ids=[point_id])
         return len(result) > 0
 
-    def index_document_pages(self, doc_name: str, page_images: List[Any]):
+    def index_document_pages(self, doc_name: str, page_images: List[Any], start_page: int = 1):
         """
         Takes page images, embeds them with VisionRetriever, and pushes to Qdrant.
         """
-        logger.info(f"Beginning vision embedding for {len(page_images)} pages of {doc_name}.")
+        logger.info(f"Beginning vision embedding for {len(page_images)} pages of {doc_name} (starting from page {start_page}).")
         
         vision_retriever = VisionRetriever()
         
@@ -53,7 +59,7 @@ class IndexingPipeline:
         
         points = []
         for i, (image, mv) in enumerate(zip(page_images, multi_vectors)):
-            page_num = i + 1
+            page_num = start_page + i
             point_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{doc_name}_page_{page_num}"))
             
             # Convert image to base64 for payload (so we can display it later or send to VLM)

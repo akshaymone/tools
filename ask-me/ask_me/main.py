@@ -24,6 +24,7 @@ def ingest():
         logger.error(f"Index directory does not exist: {path}")
         return
         
+    logger.debug(f"Crawling directory {path} for documents (.pdf, .docx, .pptx)...")
     for filepath in path.rglob("*"):
         if filepath.is_file():
             ext = filepath.suffix.lower()
@@ -37,15 +38,16 @@ def ingest():
                     # 1. Ensure it's a PDF (convert if DOCX/PPTX)
                     pdf_path = convert_to_pdf(str(filepath))
                     
-                    # 2. Extract page images
-                    page_images = extract_page_images(pdf_path)
+                    # 2. Extract page images and 3. Embed in batches to prevent OOM
+                    pages_extracted = False
+                    for start_page, page_images in extract_page_images(pdf_path):
+                        if not page_images:
+                            continue
+                        pages_extracted = True
+                        pipeline.index_document_pages(filepath.name, page_images, start_page=start_page)
                     
-                    if not page_images:
+                    if not pages_extracted:
                         logger.warning(f"No pages extracted for {filepath.name}, skipping.")
-                        continue
-                    
-                    # 3. Embed and Index using Vision Retriever
-                    pipeline.index_document_pages(filepath.name, page_images)
                     
                     
                 except Exception as e:

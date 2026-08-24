@@ -18,6 +18,7 @@ class VisionRetriever:
         
     def _init_model(self):
         logger.info(f"Loading Vision Retriever Model: {settings.vision_retriever_model}")
+        logger.debug("If this is the first run, the model weights (~1GB) are being downloaded from HuggingFace to your local cache. This might take several minutes and appear stuck.")
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.processor = ColIdefics3Processor.from_pretrained(settings.vision_retriever_model)
         self.model = ColIdefics3.from_pretrained(
