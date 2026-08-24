@@ -58,11 +58,13 @@ class ChatAgent:
         context_str = "--- RETRIEVED KNOWLEDGE ---\n"
         context_str += "The following are exact visual snapshots of the most relevant pages retrieved from the document corpus.\n"
         retrieved_images = []
-        for i, res in enumerate(results):
+        
+        # Only use the top 3 results to match the VLM token limits in generate_node
+        for i, res in enumerate(results[:3]):
             # Include the filename and page number to prevent hallucination
             doc_source = res.get("doc_name", "Unknown Document")
             page = res.get("page_number", "?")
-            context_str += f"--- Source: {doc_source} (Page {page}) ---\n"
+            context_str += f"Image {i+1} --- Source: {doc_source} (Page {page}) ---\n"
             
             if res.get("base64"):
                 retrieved_images.append(res["base64"])
@@ -97,8 +99,9 @@ class ChatAgent:
                     content = list(content) # shallow copy
                 
                 # Append up to 3 retrieved images to prevent token limits
-                for b64 in state["retrieved_images"][:3]:
+                for i, b64 in enumerate(state["retrieved_images"][:3]):
                     logger.info("Injecting a retrieved image directly into VLM prompt.")
+                    content.append({"type": "text", "text": f"Image {i+1}:"})
                     content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}})
             
             api_messages.append({"role": role, "content": content})

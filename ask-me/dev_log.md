@@ -105,5 +105,10 @@ Deploy for a wider beta test and monitor response accuracy on complex diagram qu
 **Fix 1:** Modified `retrieve_node` in `chat.py` to combine the last two user messages into a single string for Qdrant `colSmol` retrieval, drastically improving context retention.
 **Fix 2:** Injected a `CRITICAL INSTRUCTION` into the `system_prompt` in `chat.py` explicitly forbidding the VLM from referencing images or page numbers and forcing it to act as the user's "eyes" by fully transcribing/analyzing the visual data.
 
+### Bug 4: VLM Asking for Missing Pages (Image vs Context Mismatch)
+**Error:** The chat agent would occasionally respond: "I would need the image or text from page X of the document..." even when that page was retrieved.
+**Root cause:** Qdrant retrieved the top 5 pages and added all 5 to the text-based `system_prompt`. However, to save tokens, only the top 3 images were actually injected into the VLM prompt. If the answer was on the 4th or 5th page, the VLM saw the page listed in the text context but realized the image was missing, causing it to ask the user for it.
+**Fix:** Modified `retrieve_node` and `generate_node` in `chat.py` to strictly limit the text context to the top 3 pages, perfectly matching the injected images. Additionally, added explicit `Image 1:`, `Image 2:`, etc. labels to both the text context and the image payloads so the model can reliably map visual data to its source page.
+
 ### Next Steps
 Deploy fixes for wider testing and ensure users are pulling the latest batching pipeline for large PDFs.
