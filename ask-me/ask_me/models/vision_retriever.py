@@ -38,10 +38,13 @@ class VisionRetriever:
         if not images:
             return []
             
+        logger.info(f"Processing and tokenizing {len(images)} images for vision embedding...")
         inputs = self.processor.process_images(images).to(self.device)
-        logger.debug(f"Computed inputs for {len(images)} images on {self.device}.")
+        logger.debug(f"Computed inputs for {len(images)} images on {self.device}. Passing to model...")
+        
         with torch.no_grad():
             embeddings = self.model(**inputs)
+            logger.info(f"Successfully generated embeddings for {len(images)} images.")
             logger.debug(f"Generated embeddings shape: {embeddings.shape}")
             
         # embeddings shape: (batch_size, num_patches, dim)

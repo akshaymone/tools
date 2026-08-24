@@ -11,7 +11,7 @@ from .generation.chat import ChatAgent
 
 # Setup logging
 log_level = logging.DEBUG if settings.debug_log else logging.INFO
-logging.basicConfig(level=log_level, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=log_level, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', force=True)
 logger = logging.getLogger(__name__)
 
 def ingest():
