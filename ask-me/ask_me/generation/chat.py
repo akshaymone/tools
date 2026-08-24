@@ -31,20 +31,28 @@ class ChatAgent:
 
     def retrieve_node(self, state: AgentState) -> dict:
         """Retrieves context from Qdrant based on the latest user message."""
-        latest_msg = state["messages"][-1].content
-        
-        # Check if the message contains an image (multimodal query)
-        query_text = ""
-        
-        if isinstance(latest_msg, list):
-            for part in latest_msg:
-                if part.get("type") == "text":
-                    query_text = part["text"]
-        else:
-            query_text = str(latest_msg)
+        # To handle follow-up questions, we combine the last two user messages
+        # into a single query so the retriever doesn't lose context on pronouns like "it" or "this".
+        recent_user_texts = []
+        for msg in reversed(state["messages"]):
+            if isinstance(msg, HumanMessage):
+                content = msg.content
+                text = ""
+                if isinstance(content, list):
+                    for part in content:
+                        if part.get("type") == "text":
+                            text = part["text"]
+                else:
+                    text = str(content)
+                recent_user_texts.insert(0, text)
             
-        logger.info(f"Extracting context for user message: {query_text[:50]}...")
-        results = self.retriever.search(query=query_text)
+            # Grab up to the last 2 human messages
+            if len(recent_user_texts) >= 2:
+                break
+                
+        search_query = " ".join(recent_user_texts)
+        logger.info(f"Extracting context for search query: {search_query[:50]}...")
+        results = self.retriever.search(query=search_query)
         
         # Format the context
         context_str = "--- RETRIEVED KNOWLEDGE ---\n"
@@ -64,7 +72,13 @@ class ChatAgent:
 
     def generate_node(self, state: AgentState) -> dict:
         """Generates the final response using the VLM via FM Gateway."""
-        system_prompt = f"You are a helpful technical assistant. Use the following retrieved context to answer the user's question accurately.\n\n{state['context']}"
+        system_prompt = (
+            "You are a highly analytical senior technical assistant. "
+            "I will provide you with retrieved visual snapshots of document pages. "
+            "Do not just blindly repeat text. Analyze the charts, tables, and text in the provided context, "
+            "synthesize the information, and provide a thoughtful, well-reasoned answer to the user's question.\n\n"
+            f"{state['context']}"
+        )
         
         api_messages = [{"role": "system", "content": system_prompt}]
         
