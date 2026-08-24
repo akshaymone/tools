@@ -21,10 +21,21 @@ class ChatAgent:
         workflow = StateGraph(AgentState)
         workflow.add_node("retrieve", self.retrieve_node)
         workflow.add_node("generate", self.generate_node)
+        workflow.add_node("fetch", self.fetch_node)
         
         workflow.add_edge(START, "retrieve")
         workflow.add_edge("retrieve", "generate")
-        workflow.add_edge("generate", END)
+        
+        # Agentic Loop: Conditionally go to fetch if VLM requests a page, else END
+        workflow.add_conditional_edges(
+            "generate",
+            self.should_fetch,
+            {
+                "fetch": "fetch",
+                "end": END
+            }
+        )
+        workflow.add_edge("fetch", "generate")
         
         self.app = workflow.compile()
         logger.info("LangGraph ChatAgent compiled and ready.")
@@ -82,6 +93,12 @@ class ChatAgent:
             "CRITICAL INSTRUCTION: You must fully extract and explain the information in your response. "
             "NEVER tell the user to 'look at page X' or 'refer to the flowchart/image'. "
             "The user cannot see the images you see. You must transcribe and explain the steps, data, or details directly.\n\n"
+            "--- TOOL: FETCH_PAGE ---\n"
+            "If the provided pages (e.g., a Table of Contents) indicate that the answer is on a specific page that was NOT provided, "
+            "you can fetch that page by outputting EXACTLY the following on a new line: <FETCH_PAGE doc=\"document_name.pdf\" page=\"X\" />\n"
+            "Replace 'document_name.pdf' with the Source name and 'X' with the page number. "
+            "Do not output anything else if you are fetching a page. Wait for the page to be provided in the next turn.\n"
+            "------------------------\n\n"
             f"{state['context']}"
         )
         
@@ -98,8 +115,8 @@ class ChatAgent:
                 elif isinstance(content, list):
                     content = list(content) # shallow copy
                 
-                # Append up to 3 retrieved images to prevent token limits
-                for i, b64 in enumerate(state["retrieved_images"][:3]):
+                # Append all retrieved images (retrieve_node limits to 3, fetch_node may add 1)
+                for i, b64 in enumerate(state["retrieved_images"]):
                     logger.info("Injecting a retrieved image directly into VLM prompt.")
                     content.append({"type": "text", "text": f"Image {i+1}:"})
                     content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}})
@@ -110,7 +127,55 @@ class ChatAgent:
         logger.debug(f"API Messages Payload: {api_messages}")
         response_text = self.api.chat_completion(messages=api_messages)
         
-        return {"messages": [AIMessage(content=response_text)]}
+        # Append the new AIMessage to the existing list
+        new_messages = list(state["messages"])
+        new_messages.append(AIMessage(content=response_text))
+        return {"messages": new_messages}
+
+    def should_fetch(self, state: AgentState) -> str:
+        last_message = state["messages"][-1]
+        if isinstance(last_message, AIMessage) and "<FETCH_PAGE" in last_message.content:
+            return "fetch"
+        return "end"
+
+    def fetch_node(self, state: AgentState) -> dict:
+        import re
+        last_message = state["messages"][-1]
+        content = last_message.content
+        
+        logger.info("Agent triggered FETCH_PAGE tool.")
+        match = re.search(r'<FETCH_PAGE\s+doc="([^"]+)"\s+page="([^"]+)"\s*/>', content)
+        if not match:
+            logger.warning("Failed to parse FETCH_PAGE tool call.")
+            new_msg = HumanMessage(content="Error: Could not parse TOOL call. Please use the exact format: <FETCH_PAGE doc=\"...\" page=\"...\" />")
+            return {"messages": list(state["messages"]) + [new_msg]}
+            
+        doc_name = match.group(1)
+        try:
+            page = int(match.group(2))
+        except ValueError:
+            new_msg = HumanMessage(content="Error: page must be an integer.")
+            return {"messages": list(state["messages"]) + [new_msg]}
+            
+        page_data = self.retriever.fetch_page(doc_name, page)
+        
+        if not page_data or not page_data.get("base64"):
+            new_msg = HumanMessage(content=f"Error: Could not find page {page} for document {doc_name} in the index.")
+            return {"messages": list(state["messages"]) + [new_msg]}
+            
+        new_b64 = page_data["base64"]
+        new_img_index = len(state["retrieved_images"]) + 1
+        
+        new_context = state["context"] + f"Image {new_img_index} --- Source: {doc_name} (Page {page}) [FETCHED BY TOOL] ---\n\n"
+        new_retrieved_images = list(state["retrieved_images"]) + [new_b64]
+        
+        new_msg = HumanMessage(content=f"Tool Success: I have fetched page {page} of {doc_name}. It is provided as Image {new_img_index} in your visual context. Please extract the specific technical steps.")
+        
+        return {
+            "messages": list(state["messages"]) + [new_msg],
+            "context": new_context,
+            "retrieved_images": new_retrieved_images
+        }
 
     def chat(self, user_input: str, image_base64: str = None, chat_history: List[BaseMessage] = None):
         """Helper to invoke the graph with an optional chat history."""
@@ -129,5 +194,6 @@ class ChatAgent:
         logger.info("Invoking LangGraph workflow...")
         result = self.app.invoke({"messages": chat_history, "context": ""})
         
-        chat_history.append(result["messages"][-1])
-        return result["messages"][-1].content, chat_history
+        # Replace chat_history with the full message trace (including tool calls/responses)
+        chat_history = list(result["messages"])
+        return chat_history[-1].content, chat_history

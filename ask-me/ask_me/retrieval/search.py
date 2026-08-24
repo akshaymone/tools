@@ -42,3 +42,31 @@ class Retriever:
             
         logger.info(f"Retrieved {len(formatted_results)} relevant pages.")
         return formatted_results
+
+    def fetch_page(self, doc_name: str, page_number: int) -> Dict[str, Any]:
+        """Fetches a specific page from a document by its metadata."""
+        logger.info(f"Agentic fetch requested: {doc_name} - Page {page_number}")
+        
+        # We use scroll to find the exact point matching the filters
+        records, _ = self.qdrant.scroll(
+            collection_name=self.pages_col,
+            scroll_filter=models.Filter(
+                must=[
+                    models.FieldCondition(key="doc_name", match=models.MatchValue(value=doc_name)),
+                    models.FieldCondition(key="page_number", match=models.MatchValue(value=page_number)),
+                ]
+            ),
+            limit=1
+        )
+        
+        if not records:
+            logger.warning(f"Page not found in index: {doc_name} Page {page_number}")
+            return None
+            
+        res = records[0]
+        return {
+            "doc_name": res.payload.get("doc_name", "Unknown"),
+            "page_number": res.payload.get("page_number", 0),
+            "base64": res.payload.get("image_base64", "")
+        }
+

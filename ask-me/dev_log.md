@@ -110,5 +110,13 @@ Deploy for a wider beta test and monitor response accuracy on complex diagram qu
 **Root cause:** Qdrant retrieved the top 5 pages and added all 5 to the text-based `system_prompt`. However, to save tokens, only the top 3 images were actually injected into the VLM prompt. If the answer was on the 4th or 5th page, the VLM saw the page listed in the text context but realized the image was missing, causing it to ask the user for it.
 **Fix:** Modified `retrieve_node` and `generate_node` in `chat.py` to strictly limit the text context to the top 3 pages, perfectly matching the injected images. Additionally, added explicit `Image 1:`, `Image 2:`, etc. labels to both the text context and the image payloads so the model can reliably map visual data to its source page.
 
+### Feature: Agentic Multi-Hop Retrieval (Tool Calling)
+**Context:** The pipeline was limited to single-shot retrieval. If Qdrant retrieved a Table of Contents with a high keyword density, the VLM would correctly identify the target page (e.g., page 272) but had no mechanism to fetch it.
+**Solution:** Upgraded the `ChatAgent` LangGraph to support an Agentic Loop.
+1. Added `fetch_page` to the Qdrant retriever using `scroll_filter`.
+2. Updated the `system_prompt` to teach the VLM how to emit `<FETCH_PAGE doc="..." page="..." />` commands.
+3. Added a `fetch_node` and conditional edge to LangGraph. When the VLM requests a page, the agent fetches the exact base64 image from Qdrant, appends it to the visual context, and automatically loops back to the VLM to generate the final answer.
+4. Updated chat history to preserve intermediate tool calls and tool responses.
+
 ### Next Steps
 Deploy fixes for wider testing and ensure users are pulling the latest batching pipeline for large PDFs.
