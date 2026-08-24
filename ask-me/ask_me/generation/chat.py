@@ -117,6 +117,12 @@ class ChatAgent:
                 elif isinstance(content, list):
                     content = list(content) # shallow copy
                 
+                # Add a strong reminder at the end of the user's message
+                content.append({
+                    "type": "text", 
+                    "text": "\n\n[SYSTEM REMINDER: If the visual context indicates the answer is on a page you don't have, DO NOT ask me for it or tell me to read it. You MUST use the tool by outputting EXACTLY: <FETCH_PAGE doc=\"document_name\" page=\"X\" />]"
+                })
+                
                 # Append all retrieved images (retrieve_node limits to 3, fetch_node may add 1)
                 for i, b64 in enumerate(state["retrieved_images"]):
                     logger.info("Injecting a retrieved image directly into VLM prompt.")
@@ -136,7 +142,7 @@ class ChatAgent:
 
     def should_fetch(self, state: AgentState) -> str:
         last_message = state["messages"][-1]
-        if isinstance(last_message, AIMessage) and "<FETCH_PAGE" in last_message.content:
+        if isinstance(last_message, AIMessage) and "FETCH_PAGE" in last_message.content:
             return "fetch"
         return "end"
 
@@ -146,7 +152,8 @@ class ChatAgent:
         content = last_message.content
         
         logger.info("Agent triggered FETCH_PAGE tool.")
-        match = re.search(r'<FETCH_PAGE\s+doc="([^"]+)"\s+page="([^"]+)"\s*/>', content)
+        # Lenient regex: allows optional < />, single/double quotes, or no quotes for page
+        match = re.search(r'FETCH_PAGE\s+doc=["\']?([^"\'>]+)["\']?\s+page=["\']?(\d+)["\']?', content)
         if not match:
             logger.warning("Failed to parse FETCH_PAGE tool call.")
             new_msg = HumanMessage(content="Error: Could not parse TOOL call. Please use the exact format: <FETCH_PAGE doc=\"...\" page=\"...\" />")
