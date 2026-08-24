@@ -86,3 +86,24 @@ Test the ingestion pipeline end-to-end to ensure local VRAM usage remains stable
 
 ### Next Steps
 Deploy for a wider beta test and monitor response accuracy on complex diagram questions.
+
+## Session 3 — 2026-08-24 (Current)
+
+### Bug 1: Missing Debug Logs and Stuck Ingestion
+**Error:** `ask-me ingest` appeared stuck, and no debug logs were shown even when `DEBUG_LOG=True` was set in `.env`.
+**Root cause:** Third-party libraries (`transformers`, `huggingface_hub`) initialized the root logger upon import before `main.py` ran `logging.basicConfig()`, which silently caused Python to ignore our custom logging format and level.
+**Fix:** Added `force=True` to `logging.basicConfig` in `main.py` to override any third-party loggers. Added detailed explicit `logger.debug` and `logger.info` checkpoints across `pipeline.py`, `converter.py`, and `vision_retriever.py` to show wait states (like downloading HuggingFace models, Qdrant startup, or invisible `win32com` dialogs).
+
+### Bug 2: RAM OOM Error during Ingestion
+**Error:** `Unable to allocate 9.00 MiB for an array...`
+**Root cause:** `pdf2image` by default loads all pages of a PDF into a single Python list of PIL Images. For large documents, this triggered a massive burst in RAM usage (e.g., hundreds of 9MB images simultaneously), crashing the system before embedding even began.
+**Fix:** Rewrote `extract_page_images` in `converter.py` to be a generator that uses `pdfinfo_from_path` to find total pages, and then extracts images in batches of 5 using the `first_page` and `last_page` arguments. `main.py` now loops over this generator, and `pipeline.py` embeds and stores just 5 images at a time before discarding them, strictly respecting both RAM limits and the 4GB VRAM constraint.
+
+### Bug 3: Chat History Amnesia and Lazy Image Referencing
+**Error 1:** The retriever only used the latest user message for vector search, causing follow-up questions (e.g., "Who approved it?") to yield zero relevant documents since context nouns were missing.
+**Error 2:** The VLM response would sometimes lazily tell the user to "see the flowchart on page X" instead of extracting the information.
+**Fix 1:** Modified `retrieve_node` in `chat.py` to combine the last two user messages into a single string for Qdrant `colSmol` retrieval, drastically improving context retention.
+**Fix 2:** Injected a `CRITICAL INSTRUCTION` into the `system_prompt` in `chat.py` explicitly forbidding the VLM from referencing images or page numbers and forcing it to act as the user's "eyes" by fully transcribing/analyzing the visual data.
+
+### Next Steps
+Deploy fixes for wider testing and ensure users are pulling the latest batching pipeline for large PDFs.
