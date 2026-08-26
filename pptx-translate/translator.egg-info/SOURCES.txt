@@ -1,8 +1,10 @@
+MANIFEST.in
 README.md
 pyproject.toml
 translator/__init__.py
 translator/image_handler.py
 translator/main.py
+translator/md_exporter.py
 translator/ocr_batch.ps1
 translator/pptx_handler.py
 translator.egg-info/PKG-INFO

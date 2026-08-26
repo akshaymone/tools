@@ -72,7 +72,7 @@ class LLMTranslator:
             log.warning(f"LLM translation failed for '{text[:30]}': {e}")
             return text
 
-    def translate_batch(self, texts: list[str]) -> list[str]:
+    def translate_batch(self, texts: list[str], document_context: str = "") -> list[str]:
         if not texts:
             return []
         
@@ -84,13 +84,21 @@ class LLMTranslator:
             prompt_lines.append(f'<t id="{i}">{text}</t>')
         prompt = "\n".join(prompt_lines)
         
-        system_msg = SystemMessage(
-            content="You are a professional Korean to English translator for technical documents.\n"
-                    "You will receive several texts wrapped in <t id=\"...\"> tags.\n"
-                    "Translate each text to English. Return ONLY the translated texts wrapped in the EXACT same <t id=\"...\"> tags.\n"
-                    "Do not add any other text, explanations, or markdown.\n"
-                    "Keep technical terms, brand names, and English words as-is."
+        system_content = (
+            "You are a professional Korean to English translator for technical documents.\n"
+            "You will receive several texts wrapped in <t id=\"...\"> tags.\n"
+            "Translate each text to English. Return ONLY the translated texts wrapped in the EXACT same <t id=\"...\"> tags.\n"
+            "Do not add any other text, explanations, or markdown.\n"
+            "Keep technical terms, brand names, and English words as-is."
         )
+        if document_context:
+            system_content += (
+                f"\n\n--- REFERENCE CONTEXT (Full Document Text) ---\n{document_context}\n"
+                "----------------------------------------------\n"
+                "Use the reference context above to understand the full grammar and meaning of the fragments before you translate them."
+            )
+            
+        system_msg = SystemMessage(content=system_content)
         
         try:
             response = self.llm.invoke([system_msg, HumanMessage(content=prompt)])
@@ -147,10 +155,12 @@ def translate_xml_file(xml_path: Path, translator: LLMTranslator, log_file) -> N
     if not texts_to_translate:
         return
         
+    document_context = "\n".join(texts_to_translate)
+        
     if hasattr(log_file, 'stats'):
         log_file.stats['total_texts_found'] += len(texts_to_translate)
 
-    BATCH_SIZE = 20
+    BATCH_SIZE = 200
     translated_texts = []
     
     for i in range(0, len(texts_to_translate), BATCH_SIZE):
@@ -160,7 +170,7 @@ def translate_xml_file(xml_path: Path, translator: LLMTranslator, log_file) -> N
         prompt = "\n".join(prompt_lines)
         log_file.write(f"--- BATCH PROMPT (Chunk {i//BATCH_SIZE + 1}) ---\n" + prompt + "\n--------------------\n")
         
-        translated_batch = translator.translate_batch(batch)
+        translated_batch = translator.translate_batch(batch, document_context=document_context)
         
         log_file.write(f"--- BATCH RESPONSE (Chunk {i//BATCH_SIZE + 1}) ---\n")
         for j, t in enumerate(translated_batch):
@@ -247,7 +257,8 @@ def inject_ocr_text(doc_xml_path: Path, rels_path: Path, ocr_results: dict[str, 
         if skip_translate:
             translated_texts = [f"Image Text (untranslated): {t}" for t in texts]
         else:
-            translated = translator.translate_batch(texts)
+            ocr_document_context = "\n".join(texts)
+            translated = translator.translate_batch(texts, document_context=ocr_document_context)
             translated_texts = []
             for kt, trans in zip(texts, translated):
                 if kt == trans:
