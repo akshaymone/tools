@@ -120,3 +120,22 @@ Deploy for a wider beta test and monitor response accuracy on complex diagram qu
 
 ### Next Steps
 Deploy fixes for wider testing and ensure users are pulling the latest batching pipeline for large PDFs.
+
+---
+
+## Session 4 — 2026-08-26 (Current)
+
+### Feature 1: Map-Reduce for Multi-Page Analysis (Qwen-3.6-27B Integration)
+**Context:** The existing pipeline limited visual context to the top 3 images to prevent blowing out the token limit of the Vision-Language Model (Gemma-4-31B-it). This caused the model to frequently miss important details when answering questions about large documents.
+**Solution:** Built a Map-Reduce pipeline within `ChatAgent` by integrating `Qwen3.6-27B` (which has a 256K context limit).
+1. `config.py` and `api_client.py` updated to support `SYNTHESIS_MODEL` (Qwen).
+2. `chat.py` updated to allow `retrieve_node` to fetch up to 15 pages.
+3. Added a `_generate_map_reduce` flow. If >3 images are retrieved, Gemma acts as a "Map" agent, running in parallel (via `ThreadPoolExecutor`) to extract text and data from each page image.
+4. Qwen acts as the "Reduce" agent, reading the combined extractions in its massive context window and synthesizing a final answer.
+
+### Feature: Pre-trained Knowledge Fallback (Handling Missing Terminology)
+**Context:** Because the pipeline is strictly offline and RAG-based, if a user asked for the definition of a technical term not explicitly defined in the documents, the VLM would fail or reply "I don't know."
+**Solution:** Added a `GENERAL KNOWLEDGE FALLBACK` instruction to the Qwen synthesis prompt. Qwen is now allowed to use its internal pre-trained knowledge to define unknown terminology, but it is strictly instructed to prepend `[General Knowledge]` to that part of the answer to explicitly distinguish it from document-retrieved facts, maintaining offline-capability and transparency.
+
+### Next Steps
+Evaluate Qwen's synthesis quality and monitor the parallel extraction performance.
