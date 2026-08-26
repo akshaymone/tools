@@ -20,3 +20,9 @@ Use Qwen as an evaluator to check Gemma's output. After Gemma generates an answe
 
 ## 4. Infinite Chat History
 Leverage Qwen's 256K context limit to maintain extremely long chat histories. This allows users to refer back to any point in multi-hour diagnostic sessions without the system needing to summarize or drop older messages.
+
+## 5. Agentic Web Search Tool for Missing Terminology
+If a user asks for the definition of a technical term that is missing from the local documents, add an agentic loop tool (`<WEB_SEARCH query="..." />`). If the LLM cannot find the term locally, it can trigger a search (e.g., via Wikipedia/DuckDuckGo), inject the web summary into the context, and answer the user accurately.
+
+## 6. Dedicated Local Glossary/Dictionary Index
+For completely offline pipelines, allow the user to provide a `glossary.json` or dictionary file during ingestion. Create a secondary Qdrant collection just for terminology. The retriever would check this collection first before falling back to the heavy document image search.

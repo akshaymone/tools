@@ -50,11 +50,11 @@ class FMGatewayClient:
         response.raise_for_status()
         return response.json()["data"][0]["embedding"]
 
-    def chat_completion(self, messages: List[Dict[str, Any]], max_tokens: int = 1000) -> str:
-        """Calls the VLM for chat completions and image captioning."""
+    def chat_completion(self, messages: List[Dict[str, Any]], max_tokens: int = 1000, model: str = None) -> str:
+        """Calls the VLM or LLM for chat completions and image captioning."""
         url = f"{self.base_url}/v1/chat/completions"
         payload = {
-            "model": settings.vlm_model,
+            "model": model or settings.vlm_model,
             "messages": messages,
             "max_tokens": max_tokens,
             "temperature": 0.1

@@ -1,9 +1,12 @@
 import logging
+import re
+import concurrent.futures
 from typing import TypedDict, Annotated, Sequence, Dict, Any, List
 from langgraph.graph import StateGraph, START, END
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, SystemMessage
 from ..api_client import FMGatewayClient
 from ..retrieval.search import Retriever
+from ..config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -70,8 +73,8 @@ class ChatAgent:
         context_str += "The following are exact visual snapshots of the most relevant pages retrieved from the document corpus.\n"
         retrieved_images = []
         
-        # Only use the top 3 results to match the VLM token limits in generate_node
-        for i, res in enumerate(results[:3]):
+        # Allow up to 15 results for the new Map-Reduce pipeline
+        for i, res in enumerate(results[:15]):
             # Include the filename and page number to prevent hallucination
             doc_source = res.get("doc_name", "Unknown Document")
             page = res.get("page_number", "?")
@@ -83,8 +86,97 @@ class ChatAgent:
             
         return {"context": context_str, "retrieved_images": retrieved_images}
 
+    def _generate_map_reduce(self, state: AgentState) -> dict:
+        """Map-Reduce flow for large contexts (e.g. > 3 images)."""
+        images = state["retrieved_images"]
+        context_str = state["context"]
+        
+        # Find the last user message to understand the core question
+        user_query = ""
+        for msg in reversed(state["messages"]):
+            if isinstance(msg, HumanMessage):
+                if isinstance(msg.content, list):
+                    for part in msg.content:
+                        if part.get("type") == "text":
+                            user_query = part["text"]
+                else:
+                    user_query = str(msg.content)
+                break
+
+        # Map step: Extract info from each image in parallel using Gemma
+        logger.info(f"Map step: Extracting information from {len(images)} images in parallel.")
+        map_prompt = (
+            "You are an analytical assistant. I am providing you with a single document page as an image.\n"
+            f"The user's query is: '{user_query}'\n"
+            "Extract any charts, tables, facts, or text from this image that are relevant to the user's query. "
+            "If the image does not contain relevant information, reply with 'No relevant information on this page.'\n"
+            "Be highly detailed."
+        )
+        
+        def process_image(idx, b64_img):
+            messages = [
+                {"role": "system", "content": map_prompt},
+                {"role": "user", "content": [
+                    {"type": "text", "text": f"Please analyze this image for relevant information."},
+                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64_img}"}}
+                ]}
+            ]
+            try:
+                # Map step uses VLM (Gemma)
+                result = self.api.chat_completion(messages=messages, max_tokens=1000)
+                return f"--- Summary of Image {idx+1} ---\n{result}\n"
+            except Exception as e:
+                logger.error(f"Error processing image {idx+1}: {e}")
+                return f"--- Summary of Image {idx+1} ---\n[Error extracting data]\n"
+
+        extracted_texts = []
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            future_to_idx = {executor.submit(process_image, i, img): i for i, img in enumerate(images)}
+            for future in concurrent.futures.as_completed(future_to_idx):
+                extracted_texts.append(future.result())
+
+        combined_extractions = "\n".join(extracted_texts)
+        
+        # Reduce step: Synthesize with Qwen
+        logger.info("Reduce step: Synthesizing Map extractions using Qwen.")
+        reduce_system_prompt = (
+            "You are a highly analytical senior technical assistant. "
+            "I have already extracted the text and data from all relevant document pages using a Vision model. "
+            "The extracted data is provided below. Synthesize this information and provide a thoughtful, well-reasoned answer to the user's question.\n"
+            "CRITICAL INSTRUCTION: You must fully explain the information. Do not tell the user to look at the images, because you only have text extractions.\n"
+            "GENERAL KNOWLEDGE FALLBACK: If the user asks for the definition or explanation of a technical term, and the provided document data does NOT contain the answer, you may use your internal pre-trained knowledge to define it. However, you MUST explicitly prepend that specific part of your answer with '[General Knowledge]' to warn the user that it was not found in the retrieved documents.\n\n"
+            f"--- EXTRACTED PAGE DATA ---\n{combined_extractions}"
+        )
+        
+        api_messages = [{"role": "system", "content": reduce_system_prompt}]
+        for msg in state["messages"]:
+            role = "user" if isinstance(msg, HumanMessage) else "assistant"
+            content = msg.content
+            if isinstance(content, list):
+                # Flatten text for the text-only Qwen model
+                text_parts = [part["text"] for part in content if part.get("type") == "text"]
+                content = " ".join(text_parts)
+            api_messages.append({"role": role, "content": str(content)})
+            
+        # Use Qwen for Synthesis
+        response_text = self.api.chat_completion(
+            messages=api_messages, 
+            max_tokens=2000, 
+            model=settings.synthesis_model
+        )
+        
+        new_messages = list(state["messages"])
+        new_messages.append(AIMessage(content=response_text))
+        return {"messages": new_messages}
+
     def generate_node(self, state: AgentState) -> dict:
         """Generates the final response using the VLM via FM Gateway."""
+        
+        # Determine if we should use Map-Reduce (if more than 3 images are retrieved)
+        if len(state.get("retrieved_images", [])) > 3:
+            logger.info("More than 3 images retrieved. Triggering Map-Reduce pipeline.")
+            return self._generate_map_reduce(state)
+            
         system_prompt = (
             "You are a highly analytical senior technical assistant. "
             "I will provide you with retrieved visual snapshots of document pages. "
@@ -147,7 +239,6 @@ class ChatAgent:
         return "end"
 
     def fetch_node(self, state: AgentState) -> dict:
-        import re
         last_message = state["messages"][-1]
         content = last_message.content
         
