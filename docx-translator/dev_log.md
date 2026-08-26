@@ -991,3 +991,19 @@ Branched `pptx-translate` to create a dedicated `docx-translator` package. The g
 | Commit | Description |
 |---|---|
 | (Pending) | feat: create docx-translator and implement LLM translation chunking |
+
+---
+
+## Session 24 — 2026-08-26 (Current)
+
+### Feature: Qwen 3 Context-Aware Translation and Fast Batching
+**Context:** The existing translation pipelines extracted XML fragments and translated them strictly in isolation. For languages like Korean, translating fragments devoid of their surrounding sentence context often broke grammar. Additionally, `docx-translator` batched these requests in tiny chunks of 20, leading to very slow processing.
+**Solution:**
+With the availability of `Qwen 3` (256K context limit), the pipeline was significantly upgraded:
+1. **Context Injection:** `translate_xml_file` now extracts the *entire document's text* and passes it as `document_context` to `translate_batch`.
+2. **Context-Aware Prompts:** The LLM system prompt now receives a `--- REFERENCE CONTEXT ---` block containing the full document text. It is explicitly instructed to use this background context to understand the meaning and grammar of the individual XML fragments before translating them. This completely resolves the "fragmented grammar" issue.
+3. **Larger Batch Sizes:** Increased `BATCH_SIZE` in `docx-translator` from 20 to 200, achieving a 10x reduction in API calls and drastically accelerating the translation speed.
+4. **OCR Context:** Applied the same `document_context` injection to the OCR translation batches, so image text is translated consistently with the rest of the document.
+
+### Files Changed
+- `docx_translator/main.py`

@@ -961,3 +961,18 @@ New method that:
 | Commit | Description |
 |---|---|
 | `HEAD` | fix: aggregate PowerPoint text runs by paragraph before translation to preserve full sentence context |
+
+---
+
+## Session 23 — 2026-08-26 (Current)
+
+### Feature: Qwen 3 Context-Aware Translation
+**Context:** The existing translation pipeline extracted XML fragments and translated them strictly in isolation. For languages like Korean, translating fragments devoid of their surrounding sentence context often broke grammar.
+**Solution:**
+With the availability of `Qwen 3` (256K context limit), the pipeline was upgraded:
+1. **Context Injection:** `translate_xml_file` now extracts the *entire slide's text* and passes it as `document_context` to `translate_batch`.
+2. **Context-Aware Prompts:** The LLM system prompt now receives a `--- REFERENCE CONTEXT ---` block containing the full slide text. It is explicitly instructed to use this background context to understand the meaning and grammar of the individual XML fragments before translating them. This completely resolves the "fragmented grammar" issue.
+3. **OCR Context:** Applied the same `document_context` injection to the OCR translation batches, so image text is translated consistently with the rest of the slide.
+
+### Files Changed
+- `translator/main.py`
