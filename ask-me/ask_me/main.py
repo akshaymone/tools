@@ -57,8 +57,12 @@ def ingest():
 
 def chat():
     """Starts the interactive CLI chat."""
-    print("Welcome to Ask-Me! (Local Multimodal RAG)")
-    print("Type 'exit' or 'quit' to close.")
+    from rich.console import Console
+    from rich.markdown import Markdown
+    from rich.panel import Panel
+    
+    console = Console()
+    console.print(Panel.fit("[bold blue]Welcome to Ask-Me![/bold blue]\n(Local Multimodal RAG)\nType 'exit' or 'quit' to close."))
     
     agent = ChatAgent()
     history = []
@@ -70,11 +74,12 @@ def chat():
                 break
                 
             response, history = agent.chat(user_input=user_input, chat_history=history)
-            print(f"\nAssistant: {response}")
+            console.print("\n[bold green]Assistant:[/bold green]")
+            console.print(Markdown(response))
         except KeyboardInterrupt:
             break
         except Exception as e:
-            print(f"\nError: {e}")
+            console.print(f"\n[bold red]Error:[/bold red] {e}")
 
 def main():
     load_dotenv()

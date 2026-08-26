@@ -20,7 +20,8 @@ dependencies = [
     "torchvision>=0.15.0",
     "pillow>=10.0.0",
     "colpali-engine>=0.3.13",
-    "pdf2image>=1.17.0"
+    "pdf2image>=1.17.0",
+    "rich>=13.0.0"
 ]
 
 [project.scripts]
