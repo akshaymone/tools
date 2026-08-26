@@ -81,5 +81,3 @@ class IndexingPipeline:
         if points:
             logger.info(f"Upserting {len(points)} page vectors to '{self.pages_col}'")
             self.qdrant.upsert(collection_name=self.pages_col, points=points)
-            
-        logger.info(f"Indexing complete for {doc_name}.")

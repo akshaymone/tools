@@ -58,6 +58,13 @@ Run this command in your PowerShell terminal:
 pip install "git+https://github.com/akshaymone/tools.git@feature/docx-translator#subdirectory=ask-me"
 ```
 
+**CRITICAL FOR SPEED (Enable GPU Acceleration):**
+By default, the above command may install the CPU-only version of PyTorch. To enable GPU acceleration and make document ingestion 10-50x faster, you must force-install the CUDA version of PyTorch right after installing the package:
+
+```bash
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121 --upgrade --force-reinstall
+```
+
 ### 3. Configure the Environment
 Create a `.env` file in the root directory (where you run the tool) with the following configurations:
 

@@ -48,8 +48,9 @@ def ingest():
                     
                     if not pages_extracted:
                         logger.warning(f"No pages extracted for {filepath.name}, skipping.")
-                    
-                    
+                    else:
+                        logger.info(f"Indexing completely finished for {filepath.name}!")
+                        
                 except Exception as e:
                     logger.error(f"Failed to ingest {filepath.name}: {e}")
                     
