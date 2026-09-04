@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
@@ -19,7 +20,13 @@ class Settings(BaseSettings):
     
     # Ingestion Settings
     index_directory: str = os.getenv("INDEX_DIRECTORY", "./data")
-    
+    # Stable directory where extracted page JPEGs are persisted across reboots.
+    # ask-me writes page images here during indexing so that file_path stored
+    # in the Qdrant payload remains valid after server restarts.
+    image_store_dir: str = os.getenv("IMAGE_STORE_DIR", str(Path.home() / ".ask_me_store" / "vision_pages"))
+    # Optional: path for ingestion status JSON files (used by MCP poll_ingestion_status tool)
+    status_dir: str = os.getenv("STATUS_DIR", str(Path.home() / ".ask_me_store" / "status"))
+
     # Logging
     debug_log: bool = str(os.getenv("DEBUG_LOG", "False")).lower() in ("true", "1", "yes")
     
