@@ -19,3 +19,17 @@
 - Tool fully implemented and packaged.
 - Added `README.md`, `pyproject.toml`, and `.env.example`.
 - Committed and pushed to remote branch `feature/docx-translator`.
+
+## Session 2 - Batching, Performance & Sheet Names
+
+**Goal**: Fix issues regarding partially translated columns, slow performance, and untranslated sheet names.
+
+**Fixes & Improvements**:
+- **Translation Batching & Concurrency**: Reduced `BATCH_SIZE` from 200 to 50 to prevent LLM output truncation and skipping of XML tags. Implemented `concurrent.futures.ThreadPoolExecutor` to process batches in parallel, drastically reducing translation time for large XML files like `sharedStrings.xml`.
+- **Sheet Name Translation**: 
+  - Added logic to parse `xl/workbook.xml` and `docProps/app.xml` to extract and translate Korean sheet names (which are stored in `<sheet name="...">` attributes, not `<t>` tags).
+  - **Formula Safefuards**: Created a `sheet_name_map` to track translated sheet names. Passed this map into the worksheet XML processing logic to safely find and replace old Korean sheet names inside formula tags (`<f>`), ensuring that formulas referencing other sheets do not break after translation.
+
+**Outcome**:
+- Performance significantly improved and tag skipping eliminated.
+- Sheet names and their corresponding formulas are now properly translated and updated.

@@ -104,7 +104,7 @@ def clean_text(text: str) -> str:
     cleaned = re.sub(r'[^\x09\x0A\x0D\x20-\uD7FF\uE000-\uFFFD\U00010000-\U0010FFFF]', '', text)
     return cleaned.replace('\n', ' ').replace('\r', ' ').replace('\t', ' ')
 
-def translate_xml_file(xml_path: Path, translator: LLMTranslator, log_file) -> None:
+def translate_xml_file(xml_path: Path, translator: LLMTranslator, log_file, sheet_name_map: dict = None) -> None:
     import xml.sax.saxutils as saxutils
     _HANGUL_RE = re.compile(r'[\uac00-\ud7a3\u1100-\u11ff\u3130-\u318f]')
 
@@ -120,38 +120,63 @@ def translate_xml_file(xml_path: Path, translator: LLMTranslator, log_file) -> N
             texts_to_translate.append(full_text)
             log_file.write(f"Found Korean text: {full_text}\n")
             
-    if not texts_to_translate:
+    if not texts_to_translate and not (sheet_name_map and xml_path.parent.name == 'worksheets'):
         return
         
     document_context = "\n".join(texts_to_translate)
     if hasattr(log_file, 'stats'):
         log_file.stats['total_texts_found'] += len(texts_to_translate)
 
-    BATCH_SIZE = 200
+    BATCH_SIZE = 50
     translated_texts = []
     
-    for i in range(0, len(texts_to_translate), BATCH_SIZE):
-        batch = texts_to_translate[i:i + BATCH_SIZE]
-        translated_batch = translator.translate_batch(batch, document_context=document_context)
-        translated_texts.extend(translated_batch)
-    
-    for orig, trans in zip(texts_to_translate, translated_texts):
-        log_file.write(f"Mapping: {orig} -> {trans}\n")
-        if orig != trans and hasattr(log_file, 'stats'):
-            log_file.stats['total_translated'] += 1
+    if texts_to_translate:
+        batches = [texts_to_translate[i:i + BATCH_SIZE] for i in range(0, len(texts_to_translate), BATCH_SIZE)]
+        import concurrent.futures
+        
+        def _translate_batch(batch):
+            return translator.translate_batch(batch, document_context=document_context)
             
-    translated_iter = iter(translated_texts)
-    
-    def t_replacer(match):
-        prefix, inner, suffix = match.group(1), match.group(2), match.group(3)
-        full_text = saxutils.unescape(inner)
-        if _HANGUL_RE.search(full_text):
-            trans_text = next(translated_iter)
-            # Must ensure xml:space="preserve" is present if there are spaces, but usually okay
-            return f"{prefix}{saxutils.escape(clean_text(trans_text))}{suffix}"
-        return match.group(0)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            for translated_batch in executor.map(_translate_batch, batches):
+                translated_texts.extend(translated_batch)
+        
+        for orig, trans in zip(texts_to_translate, translated_texts):
+            log_file.write(f"Mapping: {orig} -> {trans}\n")
+            if orig != trans and hasattr(log_file, 'stats'):
+                log_file.stats['total_translated'] += 1
+                
+        translated_iter = iter(translated_texts)
+        
+        def t_replacer(match):
+            prefix, inner, suffix = match.group(1), match.group(2), match.group(3)
+            full_text = saxutils.unescape(inner)
+            if _HANGUL_RE.search(full_text):
+                trans_text = next(translated_iter)
+                # Must ensure xml:space="preserve" is present if there are spaces, but usually okay
+                return f"{prefix}{saxutils.escape(clean_text(trans_text))}{suffix}"
+            return match.group(0)
 
-    new_content = t_pattern.sub(t_replacer, content)
+        new_content = t_pattern.sub(t_replacer, content)
+    else:
+        new_content = content
+        
+    if sheet_name_map and xml_path.parent.name == 'worksheets':
+        f_pattern = re.compile(r'(<f[^>]*>)(.*?)(</f>)', flags=re.DOTALL)
+        def f_replacer(match):
+            prefix, inner, suffix = match.group(1), match.group(2), match.group(3)
+            inner_unescaped = saxutils.unescape(inner)
+            changed = False
+            for orig, trans in sheet_name_map.items():
+                if orig in inner_unescaped:
+                    inner_unescaped = inner_unescaped.replace(orig, trans)
+                    changed = True
+            if changed:
+                return f"{prefix}{saxutils.escape(inner_unescaped)}{suffix}"
+            return match.group(0)
+            
+        new_content = f_pattern.sub(f_replacer, new_content)
+
     if new_content != content:
         xml_path.write_text(new_content, encoding='utf-8')
 
@@ -301,6 +326,49 @@ def process_document(
         if skip_translate:
             log.info("[SKIP-TRANSLATE] Skipping all LLM translation calls.")
 
+        sheet_name_map = {}
+        workbook_path = xl_dir / 'workbook.xml'
+        if workbook_path.exists() and not skip_translate:
+            log.info("Translating workbook sheet names...")
+            import xml.sax.saxutils as saxutils
+            content = workbook_path.read_text(encoding='utf-8')
+            sheet_pattern = re.compile(r'(<sheet\s+[^>]*name=")([^"]+)(")', flags=re.IGNORECASE)
+            
+            sheet_names = []
+            _HANGUL_RE = re.compile(r'[\uac00-\ud7a3\u1100-\u11ff\u3130-\u318f]')
+            for match in sheet_pattern.finditer(content):
+                name = saxutils.unescape(match.group(2))
+                if _HANGUL_RE.search(name):
+                    sheet_names.append(name)
+                    
+            if sheet_names:
+                translated_names = translator.translate_batch(sheet_names, document_context="\n".join(sheet_names))
+                for orig, trans in zip(sheet_names, translated_names):
+                    sheet_name_map[orig] = trans
+                    
+                def sheet_replacer(match):
+                    prefix = match.group(1)
+                    name = saxutils.unescape(match.group(2))
+                    suffix = match.group(3)
+                    if name in sheet_name_map:
+                        trans_name = clean_text(sheet_name_map[name])
+                        trans_name = trans_name[:31]
+                        trans_name = re.sub(r'[\\/?*\[\]]', '', trans_name)
+                        sheet_name_map[name] = trans_name  # Update map to actual used name
+                        return f"{prefix}{saxutils.escape(trans_name)}{suffix}"
+                    return match.group(0)
+                    
+                new_content = sheet_pattern.sub(sheet_replacer, content)
+                workbook_path.write_text(new_content, encoding='utf-8')
+                
+        app_path = extract_dir / 'docProps' / 'app.xml'
+        if app_path.exists() and sheet_name_map and not skip_translate:
+            import xml.sax.saxutils as saxutils
+            content = app_path.read_text(encoding='utf-8')
+            for orig, trans in sheet_name_map.items():
+                content = content.replace(f"<vt:lpstr>{saxutils.escape(orig)}</vt:lpstr>", f"<vt:lpstr>{saxutils.escape(trans)}</vt:lpstr>")
+            app_path.write_text(content, encoding='utf-8')
+
         xml_targets = []
         if (xl_dir / 'sharedStrings.xml').exists():
             xml_targets.append(xl_dir / 'sharedStrings.xml')
@@ -321,7 +389,7 @@ def process_document(
             log_file.stats['total_files'] += 1
             log_file.write(f"\n=== Processing {xml_file.name} ===\n")
             if not skip_translate:
-                translate_xml_file(xml_file, translator, log_file)
+                translate_xml_file(xml_file, translator, log_file, sheet_name_map=sheet_name_map)
 
         if save_stages:
             p = output_xlsx.parent / f"{output_xlsx.stem}_stage_after_translate.xlsx"
