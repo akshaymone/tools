@@ -33,3 +33,15 @@
 **Outcome**:
 - Performance significantly improved and tag skipping eliminated.
 - Sheet names and their corresponding formulas are now properly translated and updated.
+
+## Session 3 - Mixed Korean-English String Translation
+
+**Goal**: Fix untranslated column containing mixed Korean-English strings (e.g., PDF filenames like `플랫폼_공통_프레임워크_BPM(Business Process Management) R00.pdf`).
+
+**Root Cause**:
+- The LLM system prompt told the model to "keep technical terms, brand names, and English words as-is." For mixed Korean-English strings (especially filenames), the LLM interpreted the entire string as a technical term/filename and returned it unchanged.
+- When the LLM omitted or returned an unchanged `<t id="N">` tag, the response-parsing regex silently fell back to the original Korean text with no warning logged.
+
+**Fixes**:
+- **Improved system prompt**: Added explicit instructions to translate Korean portions within mixed-language strings (filenames, paths, identifiers) while preserving English text, underscores, file extensions, and structure. Added a concrete example. Also instructed the LLM to never skip any `<t>` tag id.
+- **Fallback logging**: Added a `log.warning()` when the LLM response is missing a translation for a specific id, making silent fallbacks visible in debug logs.

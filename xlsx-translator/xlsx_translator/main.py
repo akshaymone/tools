@@ -69,7 +69,12 @@ class LLMTranslator:
             "You will receive several texts wrapped in <t id=\"...\"> tags.\n"
             "Translate each text to English. Return ONLY the translated texts wrapped in the EXACT same <t id=\"...\"> tags.\n"
             "Do not add any other text, explanations, or markdown.\n"
-            "Keep technical terms, brand names, and English words as-is."
+            "Keep technical terms, brand names, and English words as-is.\n"
+            "IMPORTANT: For mixed Korean-English strings (including filenames, paths, and identifiers), "
+            "you MUST translate the Korean portions to English while keeping the English portions, "
+            "underscores, file extensions, and structure intact. "
+            "For example: '플랫폼_공통_BPM.pdf' → 'Platform_Common_BPM.pdf'.\n"
+            "You MUST return a <t> tag for EVERY id you received. Do NOT skip any."
         )
         if document_context:
             system_content += (
@@ -90,6 +95,7 @@ class LLMTranslator:
                 if m:
                     translated.append(m.group(1).strip())
                 else:
+                    log.warning(f"LLM response missing translation for id={i}, keeping original: {texts[i][:80]}")
                     translated.append(texts[i])
             
             return translated
