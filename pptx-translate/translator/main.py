@@ -60,15 +60,10 @@ _SLIDE_REL_TYPE = (
     'http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide'
 )
 
-try:
-    from dotenv import load_dotenv
-    load_dotenv()
-    from agents.llm.factory import get_llm
-    from langchain_core.messages import SystemMessage, HumanMessage
-except ImportError as e:
-    print(f"Error importing from agents package: {e}")
-    print("Make sure you have installed the agents package dependencies.")
-    sys.exit(1)
+from dotenv import load_dotenv
+load_dotenv(Path.home() / ".translator" / ".env")
+from translator.llm_factory import get_llm
+from langchain_core.messages import SystemMessage, HumanMessage
 
 
 def setup_logging(verbose: bool, log_dir: Path = None):

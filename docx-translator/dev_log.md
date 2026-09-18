@@ -1007,3 +1007,10 @@ With the availability of `Qwen 3` (256K context limit), the pipeline was signifi
 
 ### Files Changed
 - `docx_translator/main.py`
+
+## 2026-09-18
+- Completely removed dependency on the external `agents` repository.
+- Replaced the `agents.llm.factory` import with a standalone, built-in `llm_factory.py` that supports `ollama` and `office` providers directly.
+- Deleted the local `agents/` stub directory that was shadowing the real package.
+- Hardcoded the `.env` file path to point to a central `~/.translator/.env` file so it doesn't need to be recreated in every working directory.
+- Updated README to reflect changes.

@@ -3,7 +3,7 @@
 Translates Korean `.docx` files into English by directly manipulating the underlying OOXML — **no python-docx save involved**, so all original parts (charts, SmartArt, media, custom XML) are preserved exactly.
 
 Image text is extracted via the **native Windows Media OCR API** (built into Windows 10/11 — no Tesseract, no external install).  
-Translation is powered by the `agents` package LLM factory, supporting local **Ollama** or the **Office API**.
+Translation is powered by a built-in LLM factory (`llm_factory.py`), supporting local **Ollama** or the **Office API**.
 
 ---
 
@@ -14,7 +14,6 @@ Translation is powered by the `agents` package LLM factory, supporting local **O
 | Python 3.10+ | |
 | Windows 10/11 | Required for native Windows Media OCR via PowerShell |
 | Korean Language Pack | Install in **Windows Settings → Time & Language → Language & Region** |
-| `agents` package | Must be installed and configured in your Python environment |
 
 ---
 
@@ -147,7 +146,7 @@ docx-translator/
 
 ## Known behaviours
 
-- **First run** needs the `agents` package set up and your LLM reachable.
+- **First run** needs your LLM reachable (Ollama running locally, or Office API endpoint configured).
 - **Korean Language Pack** must be installed — the Windows OCR engine silently returns no results without it.
 - **Mixed-language documents** — English text in `<w:t>` tags is left untouched (Hangul filter).
 - Documents without any Korean text pass through unchanged.
