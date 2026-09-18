@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "xlsx-translator"
+version = "0.1.0"
+description = "Korean to English XLSX Translator"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "tqdm>=4.66.0",
+    "python-dotenv>=1.0.0",
+    "langchain-core>=0.2.0"
+]
+
+[project.scripts]
+xlsx-translator = "xlsx_translator.main:main"
+
+[tool.setuptools]
+include-package-data = true
+packages = ["xlsx_translator"]
+
+[tool.setuptools.package-data]
+xlsx_translator = ["*.ps1"]
