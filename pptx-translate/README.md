@@ -23,8 +23,13 @@ Translation is powered by a built-in LLM factory (`llm_factory.py`), supporting 
 # 1. Install the translator package directly from GitHub
 pip install "git+https://github.com/akshaymone/tools.git#subdirectory=pptx-translate"
 
-# 2. Copy the example config and fill in your LLM settings
-copy .env.example .env
+# 2. Install your chosen LLM provider dependencies
+# For Ollama: pip install langchain-ollama
+# For Office: pip install langchain-openai httpx
+
+# 3. Create the config directory and copy the template
+mkdir ~/.translator
+copy .env.example ~/.translator/.env
 ```
 
 ### `.env` keys
@@ -61,9 +66,13 @@ translator -i input.pptx -o output_english.pptx --verbose
 | `-i` / `--input` | *(required)* | Input `.pptx` file |
 | `-o` / `--output` | *(required)* | Output `.pptx` file |
 | `--lang` | `kor` | OCR language hint (e.g. `ko-KR`) |
-| `--min-text-height` | `18` | Minimum OCR text pixel height. Lines below this are ignored (filters small labels, watermarks) |
+| `--min-text-height` | `5` | Minimum OCR text pixel height. Lines below this are ignored (filters small labels, watermarks) |
 | `--provider` | *(from `.env`)* | LLM provider: `ollama` or `office` |
 | `--verbose` | off | Enable debug-level logging |
+| `--passthrough` | off | Unzip+rezip only — no changes. |
+| `--skip-translate` | off | Run everything EXCEPT LLM translation calls. |
+| `--skip-notes` | off | Skip `ensure_notes_slides()`. |
+| `--save-stages` | off | Save checkpoints for inspection. |
 
 ---
 
@@ -146,6 +155,7 @@ pptx-translate/
 ├── .env.example            ← LLM configuration template
 ├── translator/
 │   ├── main.py             ← CLI entry point; ZIP unpack, notes init, translate, repack
+│   ├── llm_factory.py      ← LLM provider factory (Ollama, Office)
 │   ├── image_handler.py    ← Calls ocr_batch.ps1 and parses results
 │   ├── pptx_handler.py     ← Legacy markdown extraction helpers
 │   └── ocr_batch.ps1       ← Native Windows Media OCR (PowerShell 5.1, WinRT async)

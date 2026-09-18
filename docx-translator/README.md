@@ -23,8 +23,13 @@ Translation is powered by a built-in LLM factory (`llm_factory.py`), supporting 
 # 1. Install the translator package directly from GitHub
 pip install "git+https://github.com/akshaymone/tools.git#subdirectory=docx-translator"
 
-# 2. Copy the example config and fill in your LLM settings
-copy .env.example .env
+# 2. Install your chosen LLM provider dependencies
+# For Ollama: pip install langchain-ollama
+# For Office: pip install langchain-openai httpx
+
+# 3. Create the config directory and copy the template
+mkdir ~/.translator
+copy .env.example ~/.translator/.env
 ```
 
 ### `.env` keys
@@ -64,6 +69,9 @@ docx-translator -i input.docx -o output_english.docx --verbose
 | `--min-text-height` | `5` | Minimum OCR text pixel height. Lines below this are ignored (filters small labels, watermarks) |
 | `--provider` | *(from `.env`)* | LLM provider: `ollama` or `office` |
 | `--verbose` | off | Enable debug-level logging |
+| `--passthrough` | off | Unzip+rezip only — no changes. |
+| `--skip-translate` | off | Run everything EXCEPT LLM translation calls. |
+| `--save-stages` | off | Save checkpoints for inspection. |
 
 ---
 
@@ -136,6 +144,7 @@ docx-translator/
 ├── .env.example            ← LLM configuration template
 ├── docx_translator/
 │   ├── main.py             ← CLI entry point; ZIP unpack, translate, repack
+│   ├── llm_factory.py      ← LLM provider factory (Ollama, Office)
 │   ├── image_handler.py    ← Calls ocr_batch.ps1 and parses results
 │   └── ocr_batch.ps1       ← Native Windows Media OCR (PowerShell 5.1, WinRT async)
 ├── README.md
